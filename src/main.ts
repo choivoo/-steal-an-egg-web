@@ -1,0 +1,163 @@
+import * as THREE from 'three';
+import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
+import { EGGS, PETS, TREADMILLS, RARITIES } from './data/defs';
+import { fmt, worldSpeed, carrySpeed, newSave, addEgg, hatchReady, tickIncome, buyTreadmill, incomePerSec, Save } from './engine/logic';
+
+const $ = (id: string) => document.getElementById(id)!;
+const SAVE_KEY = 'sae_save_v1';
+let save: Save = (() => { try { const s = JSON.parse(localStorage.getItem(SAVE_KEY) || ''); if (s && s.v === 1) return s; } catch {} return newSave(Date.now()); })();
+const offline = tickIncome(save, Date.now());
+const wasHatched = hatchReady(save, Date.now());
+
+const renderer = new THREE.WebGLRenderer({ canvas: $('c') as HTMLCanvasElement, antialias: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2)); renderer.shadowMap.enabled = true;
+const scene = new THREE.Scene(); scene.background = new THREE.Color(0x8ecae6); scene.fog = new THREE.Fog(0x8ecae6, 60, 160);
+const cam = new THREE.PerspectiveCamera(60, 1, 0.1, 300);
+scene.add(new THREE.HemisphereLight(0xffffff, 0x446644, 1.1));
+const sun = new THREE.DirectionalLight(0xffffff, 2); sun.position.set(30, 50, 20); sun.castShadow = true;
+sun.shadow.camera.left = -40; sun.shadow.camera.right = 40; sun.shadow.camera.top = 40; sun.shadow.camera.bottom = -40; scene.add(sun);
+
+const ground = new THREE.Mesh(new THREE.PlaneGeometry(400, 400), new THREE.MeshStandardMaterial({ color: 0x5aa05a })); ground.rotation.x = -Math.PI / 2; ground.receiveShadow = true; scene.add(ground);
+const FOREST = new THREE.Vector3(0, 0, -70);
+const forestFloor = new THREE.Mesh(new THREE.CircleGeometry(30, 40), new THREE.MeshStandardMaterial({ color: 0x2e6b34 })); forestFloor.rotation.x = -Math.PI / 2; forestFloor.position.set(FOREST.x, 0.02, FOREST.z); scene.add(forestFloor);
+const SAFE_R = 14;
+const safe = new THREE.Mesh(new THREE.RingGeometry(SAFE_R - 0.4, SAFE_R, 64), new THREE.MeshBasicMaterial({ color: 0x66ffcc, side: THREE.DoubleSide })); safe.rotation.x = -Math.PI / 2; safe.position.y = 0.05; scene.add(safe);
+for (let i = 0; i < 40; i++) { // trees
+  const a = Math.random() * Math.PI * 2, r = 8 + Math.random() * 26; const t = new THREE.Group();
+  const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.4, 0.6, 4, 6), new THREE.MeshStandardMaterial({ color: 0x6b4a2b })); trunk.position.y = 2; t.add(trunk);
+  const leaves = new THREE.Mesh(new THREE.ConeGeometry(2.4, 6, 7), new THREE.MeshStandardMaterial({ color: 0x1f7a3a })); leaves.position.y = 6; t.add(leaves);
+  t.position.set(FOREST.x + Math.cos(a) * r, 0, FOREST.z + Math.sin(a) * r); t.children.forEach(c => c.castShadow = true); scene.add(t);
+}
+// treadmill at base
+const TM = new THREE.Vector3(8, 0, 6);
+const tmMesh = new THREE.Group();
+tmMesh.add(new THREE.Mesh(new THREE.BoxGeometry(2.4, 0.4, 5), new THREE.MeshStandardMaterial({ color: 0x333a44, metalness: 0.6, roughness: 0.4 })));
+const belt = new THREE.Mesh(new THREE.BoxGeometry(2, 0.1, 4.6), new THREE.MeshStandardMaterial({ color: 0x111, emissive: 0x2288ff, emissiveIntensity: 0.6 })); belt.position.y = 0.25; tmMesh.add(belt);
+tmMesh.position.copy(TM).setY(0.2); scene.add(tmMesh);
+
+const loader = new GLTFLoader(); const cache = new Map<string, Promise<THREE.Object3D>>();
+const BASE = import.meta.env.BASE_URL + 'assets/models/';
+function model(path: string, h: number): Promise<THREE.Object3D> {
+  if (!cache.has(path)) cache.set(path, loader.loadAsync(BASE + path).then(g => g.scene));
+  return cache.get(path)!.then(o => { const c = o.clone(true); c.traverse(m => { (m as THREE.Mesh).castShadow = true; }); const b = new THREE.Box3().setFromObject(c); const s = h / (b.max.y - b.min.y || 1); c.scale.setScalar(s); const b2 = new THREE.Box3().setFromObject(c); c.position.y -= b2.min.y; const w = new THREE.Group(); w.add(c); return w; });
+}
+// player
+const player = new THREE.Group(); const pb = new THREE.Mesh(new THREE.CapsuleGeometry(0.45, 0.9, 4, 12), new THREE.MeshStandardMaterial({ color: 0xffcc66 })); pb.position.y = 0.95; pb.castShadow = true; player.add(pb);
+const head = new THREE.Mesh(new THREE.SphereGeometry(0.38, 16, 12), new THREE.MeshStandardMaterial({ color: 0xffe0b0 })); head.position.y = 1.9; player.add(head);
+player.position.set(0, 0, 4); scene.add(player);
+let carried: { eggId: string; src: number; obj: THREE.Object3D } | null = null;
+
+// guardian
+const guardian = new THREE.Group(); scene.add(guardian);
+model('guardians/ironbeak.glb', 6).then(m => guardian.add(m));
+type GState = 'SLEEP' | 'WAKE_UP' | 'CHASE' | 'ATTACK' | 'RECOVER' | 'RETURN_HOME';
+const G = { state: 'SLEEP' as GState, t: 0, home: new THREE.Vector3(FOREST.x, 0, FOREST.z - 6) };
+guardian.position.copy(G.home);
+// wild eggs
+interface Wild { eggId: string; pos: THREE.Vector3; obj: THREE.Group; taken: boolean }
+const wild: Wild[] = EGGS.map((e, i) => { const g = new THREE.Group(); const p = new THREE.Vector3(FOREST.x - 12 + i * 12, 0, FOREST.z + 4); g.position.copy(p); scene.add(g); model(e.model, 1.4 + e.weight * 0.1).then(m => g.add(m)); return { eggId: e.id, pos: p, obj: g, taken: false }; });
+// pets at base
+const petObjs = new Map<string, THREE.Object3D>();
+function syncPets() {
+  save.pets.forEach((p, i) => { if (petObjs.has(p.uid)) return; const d = PETS.find(x => x.id === p.petId)!; const g = new THREE.Group(); const a = i * 0.9; g.position.set(-6 + Math.cos(a) * (3 + Math.floor(i / 7) * 2.5), 0, -4 + Math.sin(a) * (3 + Math.floor(i / 7) * 2.5)); g.userData.ph = Math.random() * 6; scene.add(g); petObjs.set(p.uid, g); model(d.model, d.scale * 1.8).then(m => g.add(m)); });
+}
+const slotObjs = new Map<string, THREE.Group>();
+function syncEggs() {
+  save.eggs.forEach((e, i) => { if (slotObjs.has(e.uid)) return; const g = new THREE.Group(); g.position.set(-14 + i * 3.2, 0, 8); scene.add(g); slotObjs.set(e.uid, g); const d = EGGS.find(x => x.id === e.eggId)!; model(d.model, 1.5).then(m => g.add(m)); });
+  for (const [uid, g] of slotObjs) if (!save.eggs.find(e => e.uid === uid)) { scene.remove(g); slotObjs.delete(uid); }
+}
+
+// input
+const keys: Record<string, boolean> = {}; let joy = { x: 0, y: 0 };
+addEventListener('keydown', e => { keys[e.code] = true; if (e.code === 'KeyE') interact(); if (e.code === 'KeyU') shopBuy(); });
+addEventListener('keyup', e => keys[e.code] = false); addEventListener('blur', () => { for (const k in keys) keys[k] = false; joy = { x: 0, y: 0 }; });
+const joyEl = $('joy'), knob = $('knob'); let joyId = -1; let camYaw = 0, camPitch = 0.45, camDist = 11; let camId = -1, lastX = 0, lastY = 0;
+joyEl.addEventListener('pointerdown', e => { joyId = e.pointerId; joyEl.setPointerCapture(e.pointerId); mv(e); });
+joyEl.addEventListener('pointermove', e => { if (e.pointerId === joyId) mv(e); });
+const joyEnd = (e: PointerEvent) => { if (e.pointerId === joyId) { joyId = -1; joy = { x: 0, y: 0 }; knob.style.transform = ''; } };
+joyEl.addEventListener('pointerup', joyEnd); joyEl.addEventListener('pointercancel', joyEnd);
+function mv(e: PointerEvent) { const r = joyEl.getBoundingClientRect(); let dx = e.clientX - (r.left + r.width / 2), dy = e.clientY - (r.top + r.height / 2); const l = Math.hypot(dx, dy), m = 55; if (l > m) { dx = dx / l * m; dy = dy / l * m; } joy = { x: dx / m, y: dy / m }; knob.style.transform = `translate(${dx}px,${dy}px)`; }
+const cv = $('c'); cv.addEventListener('pointerdown', e => { camId = e.pointerId; lastX = e.clientX; lastY = e.clientY; AudioCtx(); });
+cv.addEventListener('pointermove', e => { if (e.pointerId !== camId) return; camYaw -= (e.clientX - lastX) * 0.006; camPitch = Math.min(1.2, Math.max(0.1, camPitch + (e.clientY - lastY) * 0.005)); lastX = e.clientX; lastY = e.clientY; });
+cv.addEventListener('pointerup', () => camId = -1); cv.addEventListener('wheel', e => { camDist = Math.min(20, Math.max(5, camDist + e.deltaY * 0.01)); });
+$('act').addEventListener('pointerdown', e => { e.stopPropagation(); interact(); }); $('shop').addEventListener('pointerdown', e => { e.stopPropagation(); shopBuy(); });
+// audio
+let ac: AudioContext | null = null; function AudioCtx() { if (!ac) try { ac = new AudioContext(); } catch {} }
+function beep(f: number, d = 0.15, t: OscillatorType = 'sine') { if (!ac) return; const o = ac.createOscillator(), g = ac.createGain(); o.type = t; o.frequency.value = f; g.gain.value = 0.08; o.connect(g); g.connect(ac.destination); o.start(); g.gain.exponentialRampToValueAtTime(0.0001, ac.currentTime + d); o.stop(ac.currentTime + d); }
+let msgT = 0; function say(s: string, t = 2.5) { $('msg').textContent = s; msgT = t; }
+
+// state
+let training = false; let chased = false; const dist2 = (a: THREE.Vector3, b: THREE.Vector3) => Math.hypot(a.x - b.x, a.z - b.z);
+function nearWild(): Wild | null { for (const w of wild) if (!w.taken && dist2(player.position, w.pos) < 3.5) return w; return null; }
+function interact() {
+  AudioCtx();
+  if (training) { training = false; say('훈련 종료'); return; }
+  if (dist2(player.position, TM) < 3.5 && !carried) { training = true; player.position.set(TM.x, 0.4, TM.z); say('훈련 시작! (이동하면 종료)'); beep(440); return; }
+  const w = nearWild();
+  if (w && !carried && save.eggs.length < save.slots) {
+    const d = EGGS.find(e => e.id === w.eggId)!; w.taken = true; const idx = wild.indexOf(w);
+    scene.remove(w.obj); const o = new THREE.Group(); carried = { eggId: w.eggId, src: idx, obj: o }; scene.add(o); model(d.model, 1.2).then(m => o.add(m));
+    chased = true; G.state = G.state === 'SLEEP' ? 'WAKE_UP' : 'CHASE'; G.t = 0; beep(120, 0.4, 'sawtooth'); say(`${d.name} 훔침! 안전구역으로 도망!`);
+  } else if (w && save.eggs.length >= save.slots) say('부화 슬롯이 가득 찼습니다');
+}
+function shopBuy() { const n = TREADMILLS[save.treadmill + 1]; if (!n) return say('최고 단계'); if (buyTreadmill(save)) { say(`${n.name} 구매!`); beep(660); persist(); } else say(`돈 부족: ${fmt(n.cost)} 필요`); }
+function endChase(success: boolean) {
+  chased = false; G.state = 'RETURN_HOME'; $('chase').style.display = 'none';
+  if (!carried) return; const c = carried; carried = null; scene.remove(c.obj);
+  if (success) { addEgg(save, c.eggId, Date.now()); syncEggs(); say('귀환 성공! 알이 부화 슬롯에 놓였습니다'); beep(880, 0.3); persist(); }
+  else { const w = wild[c.src]; w.taken = false; scene.add(w.obj); say('잡혔다! 알을 잃었습니다'); beep(90, 0.5, 'square'); player.position.set(0, 0, 4); }
+}
+function persist() { save.last = Date.now(); try { localStorage.setItem(SAVE_KEY, JSON.stringify(save)); } catch {} }
+setInterval(persist, 5000); document.addEventListener('visibilitychange', () => { if (document.hidden) persist(); });
+
+// loop
+const clock = new THREE.Clock(); const v = new THREE.Vector3(); let lastHatchCheck = 0;
+function resize() { const w = innerWidth, h = innerHeight; renderer.setSize(w, h, false); cam.aspect = w / h; cam.updateProjectionMatrix(); } addEventListener('resize', resize); resize();
+function frame() {
+  const dt = Math.min(clock.getDelta(), 0.1); const now = Date.now(); const t = clock.elapsedTime;
+  let ix = (keys.KeyD ? 1 : 0) - (keys.KeyA ? 1 : 0) + joy.x, iz = (keys.KeyS ? 1 : 0) - (keys.KeyW ? 1 : 0) + joy.y;
+  const il = Math.hypot(ix, iz); const moving = il > 0.1;
+  if (training && moving) training = false;
+  const base = worldSpeed(save.train); const spd = carried ? carrySpeed(base, EGGS.find(e => e.id === carried!.eggId)!.weight) : base;
+  if (training) { save.train += TREADMILLS[save.treadmill].gain * dt; player.rotation.y = Math.PI; pb.position.y = 0.95 + Math.abs(Math.sin(t * 12)) * 0.15; belt.material.emissiveIntensity = 1 + Math.sin(t * 20) * 0.5; }
+  else if (moving) {
+    const l = Math.min(il, 1); ix /= il; iz /= il; const c = Math.cos(camYaw), s = Math.sin(camYaw);
+    const wx = ix * c + iz * s, wz = -ix * s + iz * c; player.position.x += wx * spd * l * dt; player.position.z += wz * spd * l * dt;
+    player.rotation.y = Math.atan2(wx, wz); pb.position.y = 0.95 + Math.abs(Math.sin(t * 14)) * 0.12;
+  } else pb.position.y = 0.95;
+  player.position.x = Math.max(-190, Math.min(190, player.position.x)); player.position.z = Math.max(-190, Math.min(190, player.position.z));
+  const inSafe = Math.hypot(player.position.x, player.position.z) < SAFE_R;
+  if (carried) { carried.obj.position.set(player.position.x, 2.4, player.position.z); carried.obj.rotation.y += dt * 2; if (inSafe) endChase(true); }
+  // guardian FSM
+  const gp = guardian.position;
+  if (G.state === 'WAKE_UP') { G.t += dt; guardian.scale.y = 1 + Math.sin(G.t * 8) * 0.05; if (G.t > 1) { G.state = 'CHASE'; G.t = 0; guardian.scale.y = 1; } }
+  else if (G.state === 'CHASE') {
+    if (!chased || !carried) G.state = 'RETURN_HOME'; else {
+      v.set(player.position.x - gp.x, 0, player.position.z - gp.z); const d = v.length(); v.normalize(); gp.addScaledVector(v, (base * 0.92 + 1) * dt); guardian.rotation.y = Math.atan2(v.x, v.z);
+      if (d < 3) { G.state = 'ATTACK'; G.t = 0; }
+      if (Math.hypot(gp.x, gp.z) < SAFE_R + 2) { v.set(gp.x, 0, gp.z).normalize(); gp.copy(v.multiplyScalar(SAFE_R + 2)); } // 안전구역 진입 불가
+    }
+  } else if (G.state === 'ATTACK') { G.t += dt; guardian.position.y = Math.sin(Math.min(G.t * 3, 1) * Math.PI) * 0.8; if (G.t > 0.5 && carried && dist2(gp, player.position) < 4.5) { endChase(false); G.state = 'RECOVER'; G.t = 0; } else if (G.t > 0.7) { G.state = carried ? 'CHASE' : 'RECOVER'; G.t = 0; guardian.position.y = 0; } }
+  else if (G.state === 'RECOVER') { G.t += dt; guardian.position.y = 0; if (G.t > 1.5) G.state = 'RETURN_HOME'; }
+  else if (G.state === 'RETURN_HOME') { v.set(G.home.x - gp.x, 0, G.home.z - gp.z); const d = v.length(); if (d < 0.5) { G.state = 'SLEEP'; } else { v.normalize(); gp.addScaledVector(v, 8 * dt); guardian.rotation.y = Math.atan2(v.x, v.z); } }
+  $('chase').style.display = chased ? 'block' : 'none';
+  // hatching + income
+  if (now - lastHatchCheck > 500) { lastHatchCheck = now; const g = tickIncome(save, now); const h = hatchReady(save, now); if (h.length) { syncEggs(); syncPets(); h.forEach(p => { const d = PETS.find(x => x.id === p.petId)!; say(`🐣 ${d.name} 부화! (${RARITIES.find(r => r.id === d.rarity)!.name})`, 4); beep(990, 0.4); }); persist(); } void g; }
+  for (const [, o] of petObjs) o.position.y = Math.abs(Math.sin(t * 2 + o.userData.ph)) * 0.2;
+  for (const e of save.eggs) { const o = slotObjs.get(e.uid); if (o) { const total = EGGS.find(x => x.id === e.eggId)!.hatchSec * 1000; const pr = 1 - Math.max(0, e.hatchAt - now) / total; o.rotation.z = pr > 0.8 ? Math.sin(t * 25) * 0.15 * pr : 0; o.scale.setScalar(0.8 + pr * 0.4); } }
+  for (const w of wild) w.obj.rotation.y += dt * 0.5;
+  // camera
+  const tgt = new THREE.Vector3(player.position.x, 1.8, player.position.z); cam.position.set(tgt.x + Math.sin(camYaw) * Math.cos(camPitch) * camDist, tgt.y + Math.sin(camPitch) * camDist, tgt.z + Math.cos(camYaw) * Math.cos(camPitch) * camDist); cam.lookAt(tgt);
+  // HUD
+  $('money').textContent = `💰 ${fmt(save.money)}`; $('spd').textContent = `👟 ${fmt(save.train)} (속도 ${spd.toFixed(1)})`; $('inc').textContent = `🐾 +${fmt(incomePerSec(save))}/s`;
+  const nxt = TREADMILLS[save.treadmill + 1]; $('shop').textContent = nxt ? `${nxt.name.slice(0, 2)}\n${fmt(nxt.cost)}` : 'MAX';
+  $('zone').textContent = inSafe ? '🟢 안전구역' : dist2(player.position, FOREST) < 32 ? '🌲 숲 (위험)' : '🌿 평원';
+  $('list').innerHTML = save.eggs.map(e => { const d = EGGS.find(x => x.id === e.eggId)!; const s = Math.max(0, Math.ceil((e.hatchAt - now) / 1000)); return `🥚 ${d.name} — ${s}s`; }).join('<br>') + `<br>펫 ${save.pets.length}마리 · 슬롯 ${save.eggs.length}/${save.slots}`;
+  const canAct = training || (dist2(player.position, TM) < 3.5 && !carried) || !!nearWild(); ($('act') as HTMLElement).style.display = canAct ? 'block' : 'none';
+  if (msgT > 0) { msgT -= dt; if (msgT <= 0) $('msg').textContent = ''; }
+  renderer.render(scene, cam); requestAnimationFrame(frame);
+}
+syncEggs(); syncPets();
+if (offline > 1) say(`오프라인 수익 +${fmt(offline)}${wasHatched.length ? `, 펫 ${wasHatched.length}마리 부화!` : ''}`, 4);
+(window as any).__game = { save: () => save, player, G, get carried() { return carried; }, interact, wild };
+frame();

@@ -1,0 +1,23 @@
+<!doctype html><html lang="ko"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<title>STEAL AN EGG: WEB EDITION</title>
+<style>
+*{box-sizing:border-box;touch-action:none;user-select:none;-webkit-user-select:none}
+html,body{margin:0;height:100%;overflow:hidden;background:#101820;font-family:system-ui,sans-serif;color:#fff}
+canvas{display:block;width:100%;height:100%}
+#hud{position:fixed;inset:0;pointer-events:none;padding:env(safe-area-inset-top) 12px 12px}
+.pill{display:inline-block;background:#0009;border-radius:12px;padding:6px 12px;margin:4px 4px 0 0;font-weight:700;font-size:15px}
+#msg{position:fixed;top:22%;left:50%;transform:translateX(-50%);font-size:22px;font-weight:800;text-shadow:0 2px 6px #000;text-align:center;pointer-events:none}
+#chase{display:none;position:fixed;inset:0;box-shadow:inset 0 0 120px #f22;pointer-events:none}
+.btn{position:fixed;pointer-events:auto;background:#ffb300;color:#222;border:0;border-radius:50%;font-weight:800;width:76px;height:76px;font-size:14px;right:18px}
+#act{bottom:110px;display:none}#shop{bottom:200px;width:64px;height:64px;font-size:12px;background:#4fc3f7}
+#list{position:fixed;left:12px;top:90px;font-size:13px;pointer-events:none;line-height:1.5}
+#joy{position:fixed;left:24px;bottom:24px;width:130px;height:130px;border-radius:50%;background:#fff2;border:2px solid #fff5}
+#knob{position:absolute;width:56px;height:56px;border-radius:50%;background:#fffa;left:37px;top:37px}
+</style></head><body>
+<link rel="icon" href="data:,"><canvas id="c"></canvas>
+<div id="hud"><span class="pill" id="money"></span><span class="pill" id="spd"></span><span class="pill" id="inc"></span><span class="pill" id="zone"></span><div id="list"></div></div>
+<div id="chase"></div><div id="msg"></div>
+<button class="btn" id="act">상호작용</button><button class="btn" id="shop">업그레이드</button>
+<div id="joy"><div id="knob"></div></div>
+<script type="module" src="/src/main.ts"></script></body></html>
