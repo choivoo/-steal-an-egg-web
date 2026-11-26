@@ -16,7 +16,7 @@ export function startServer(port: number, mgr = new RoomManager(), store: Store 
   let audit: object[] = []; void meta.load('meta:audit').then(v => { if (Array.isArray(v?.list)) audit = v.list; }).catch(() => {});
   const saveMeta = () => { meta.set('meta:events', events.dump()); meta.set('meta:audit', { list: audit.slice(-500) }); };
   const startedAt = Date.now();
-  const status = () => ({ ok: true, online: mgr.online(), servers: mgr.rooms.size, maxPerServer: MAX_PLAYERS_PER_ROOM, uptimeSec: Math.round((Date.now() - startedAt) / 1000),
+  const status = () => ({ ok: true, storage: store.constructor.name === 'PgStore' ? 'postgres' : store.constructor.name === 'JsonFileStore' ? 'file(임시 디스크)' : 'memory', online: mgr.online(), servers: mgr.rooms.size, maxPerServer: MAX_PLAYERS_PER_ROOM, uptimeSec: Math.round((Date.now() - startedAt) / 1000),
     rooms: mgr.list().filter(r => r.state !== 'CLOSED').map(r => ({ id: r.id, code: r.code, players: r.players, max: r.max, state: r.state })), events: events.active(Date.now()).map(e => ({ id: e.id, kind: e.kind, mult: e.mult, end: e.end, title: e.title })) });
   const http = createServer((req: IncomingMessage, res: ServerResponse) => {
     res.setHeader('Access-Control-Allow-Origin', origins.length ? (origins.includes(req.headers.origin ?? '') ? req.headers.origin! : origins[0]) : '*');

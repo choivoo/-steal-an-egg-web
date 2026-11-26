@@ -66,3 +66,12 @@
 ## 배포 상태
 - 기본 서버 주소를 https://steal-an-egg-server.onrender.com 으로 가정(render.yaml 서비스명). 이 컨테이너에서 해당 주소는 응답 없음(타임아웃) — 실제 주소 미확인. 이 환경의 프록시는 WebSocket 업그레이드를 통과시키지 못하므로 여기서 실서버 WS 검증 불가
 - GitHub Pages 워크플로는 main 푸시 시 실행. 작업 브랜치→main 병합은 사용자 승인 필요
+
+## 업데이트 8 (TESTED) — 배포 + 레인 월드 + VOXEL 에셋
+- **실제 배포 확인**: 프런트 https://choivoo.github.io/-steal-an-egg-web/ (GitHub Pages, main 푸시 시 자동), 서버 https://steal-an-egg-server.onrender.com (Render Blueprint). 배포된 게임 → WSS 접속 → 공개 서버 자동 생성·입장(1/7)을 헤드리스 브라우저로 확인
+- 사용자 제공 원작 플레이 영상(프레임 추출 분석) 기반으로 월드를 **기지 → 안전선 → 13개 지역 직선 레인**으로 재구성(클라이언트·서버 공용 worldConsts). 지역당 둥지 3, 지역별 수호자 13(카탈로그 추격 속도), 지역 스트리밍(±1 지역만 모델 로드), 지역별 하늘색·바닥·벽·표지판(권장 속도)·Blender 소품·포털
+- 에셋 582개 VOXEL 스타일(레퍼런스 Starlight Kitsune) — docs/ASSET_MANIFEST.md, docs/ASSET_QA_REPORT.md
+- `/status`에 저장소 종류 표시(postgres / file(임시 디스크) / memory) — Render에 DATABASE_URL 미설정이면 재시작 시 진행도 소실
+- 테스트: vitest 37 통과(+PG 1 조건부), e2e: 오프라인 루프·레인 6지역 스크린샷·지역 수호자 추격·온라인 경쟁·로비
+## 남은 큰 작업
+- 인벤토리/도감 UI(썸네일 사용), 돌연변이·크기, 낚시, 기지 확장, 퀘스트, 부화 연출, 리깅 애니메이션, 서버 이동 UI, 부하 테스트(50/100), i18n, PWA

@@ -2,7 +2,8 @@ import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { MeshoptDecoder } from 'three/examples/jsm/libs/meshopt_decoder.module.js';
 import { EGGS, PETS, TREADMILLS, RARITIES, ENVIRONMENT, GUARDIANS, PLAYERS } from './data/defs';
-import { EGG_TYPES, eggSpawn } from './data/worldConsts';
+import { NESTS, GUARDS, SAFE_LINE, LANE_HALF, BIOME_LEN, biomeZ0, biomeAt, clampToWorld, LANE_END } from './data/worldConsts';
+import { BIOMES } from './data/defs';
 import { Net } from './net/client';
 import { fmt, worldSpeed, carrySpeed, newSave, addEgg, hatchReady, tickIncome, buyTreadmill, incomePerSec, Save } from './engine/logic';
 
@@ -20,11 +21,37 @@ scene.add(new THREE.HemisphereLight(0xffffff, 0x446644, 1.1));
 const sun = new THREE.DirectionalLight(0xffffff, 2); sun.position.set(30, 50, 20); sun.castShadow = true;
 sun.shadow.camera.left = -40; sun.shadow.camera.right = 40; sun.shadow.camera.top = 40; sun.shadow.camera.bottom = -40; scene.add(sun);
 
-const ground = new THREE.Mesh(new THREE.PlaneGeometry(400, 400), new THREE.MeshStandardMaterial({ color: 0x5aa05a })); ground.rotation.x = -Math.PI / 2; ground.receiveShadow = true; scene.add(ground);
-const FOREST = new THREE.Vector3(0, 0, -70);
-const forestFloor = new THREE.Mesh(new THREE.CircleGeometry(30, 40), new THREE.MeshStandardMaterial({ color: 0x2e6b34 })); forestFloor.rotation.x = -Math.PI / 2; forestFloor.position.set(FOREST.x, 0.02, FOREST.z); scene.add(forestFloor);
-const SAFE_R = 14;
-const safe = new THREE.Mesh(new THREE.RingGeometry(SAFE_R - 0.4, SAFE_R, 64), new THREE.MeshBasicMaterial({ color: 0x66ffcc, side: THREE.DoubleSide })); safe.rotation.x = -Math.PI / 2; safe.position.y = 0.05; scene.add(safe);
+// ===== 기지 광장 + 13개 지역 직선 레인 (원작 참고 영상 구조) =====
+const plaza = new THREE.Mesh(new THREE.BoxGeometry(70, 1, 50), new THREE.MeshStandardMaterial({ color: 0x6cc45a })); plaza.position.set(0, -0.5, 8); plaza.receiveShadow = true; scene.add(plaza);
+const sea = new THREE.Mesh(new THREE.PlaneGeometry(3000, 3000), new THREE.MeshStandardMaterial({ color: 0x3fa7e0 })); sea.rotation.x = -Math.PI / 2; sea.position.y = -6; scene.add(sea);
+const safeStrip = new THREE.Mesh(new THREE.BoxGeometry(LANE_HALF * 2, 0.08, 0.8), new THREE.MeshBasicMaterial({ color: 0x66ffcc })); safeStrip.position.set(0, 0.05, SAFE_LINE); scene.add(safeStrip);
+const bridge = new THREE.Mesh(new THREE.BoxGeometry(LANE_HALF * 2, 1, 6), new THREE.MeshStandardMaterial({ color: 0xbfae8a })); bridge.position.set(0, -0.5, SAFE_LINE - 3); scene.add(bridge);
+const darker = (hex: string, k: number) => new THREE.Color(hex).multiplyScalar(k);
+function signTexture(text: string, sub: string) {
+  const c = document.createElement('canvas'); c.width = 512; c.height = 160; const x = c.getContext('2d')!;
+  x.fillStyle = '#000a'; x.fillRect(0, 0, 512, 160); x.fillStyle = '#fff'; x.font = 'bold 64px sans-serif'; x.textAlign = 'center'; x.fillText(text, 256, 78); x.font = 'bold 34px sans-serif'; x.fillStyle = '#ffd54f'; x.fillText(sub, 256, 130);
+  const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; return t;
+}
+BIOMES.forEach((b, i) => {
+  const z0 = biomeZ0(i), zc = z0 - BIOME_LEN / 2;
+  const floor = new THREE.Mesh(new THREE.BoxGeometry(LANE_HALF * 2, 1, BIOME_LEN), new THREE.MeshStandardMaterial({ color: new THREE.Color(b.ground) })); floor.position.set(0, -0.5, zc); floor.receiveShadow = true; scene.add(floor);
+  for (const sx of [-1, 1]) { const w = new THREE.Mesh(new THREE.BoxGeometry(2.4, 5 + (i % 3), BIOME_LEN), new THREE.MeshStandardMaterial({ color: darker(b.ground, 0.62) })); w.position.set(sx * (LANE_HALF + 1.2), (5 + (i % 3)) / 2 - 0.5, zc); w.castShadow = true; w.receiveShadow = true; scene.add(w); }
+  const sign = new THREE.Mesh(new THREE.PlaneGeometry(9, 2.8), new THREE.MeshBasicMaterial({ map: signTexture(b.ko, `권장 속도 ${fmt(b.requiredSpeed)}`), transparent: true })); sign.position.set(0, 8.5, z0 - 0.5); scene.add(sign);
+});
+// 지역 스트리밍: 플레이어 주변(±1 지역)만 Blender 소품·수호자·알 모델 로드
+const biomeProps: THREE.Group[] = BIOMES.map(() => { const g = new THREE.Group(); scene.add(g); return g; });
+const biomeLoaded = BIOMES.map(() => false);
+function loadBiome(i: number) {
+  if (i < 0 || i >= BIOMES.length || biomeLoaded[i]) return; biomeLoaded[i] = true; const b = BIOMES[i]; const env = ENVIRONMENT.filter(e => e.biome === b.id); const grp = biomeProps[i]; const z0 = biomeZ0(i);
+  const rnd = (k: number) => { const x = Math.sin(i * 97.1 + k * 13.7) * 43758.5; return x - Math.floor(x); };
+  for (let k = 0; k < 16; k++) { const e = env[k % env.length]; const side = k % 2 ? 1 : -1; const g = new THREE.Group(); g.position.set(side * (LANE_HALF - 2.2 - rnd(k) * 2), 0, z0 - 4 - k * (BIOME_LEN - 8) / 16); g.rotation.y = rnd(k + 50) * 6.28; grp.add(g); void modelAbs(e.model, e.kind.includes('tree') ? 1.5 : 1.1).then(m => g.add(m)).catch(() => {}); }
+  const portal = new THREE.Group(); portal.position.set(0, 0, z0 - 1); grp.add(portal); void modelAbs(`buildings/build_portal_${b.id}.glb`, 2.6).then(m => portal.add(m)).catch(() => {});
+  const gd = guards[i]; if (!gd.loaded) { gd.loaded = true; void model(GUARDS[i].model, 5.5 + i * 0.15).then(m => gd.obj.add(m)); }
+  wild.forEach(w => { if (w.biome === i && !w.loaded) { w.loaded = true; const d = EGGS.find(x => x.id === w.eggId)!; void model(d.model, 1.4 + d.weight * 0.08).then(m => w.obj.add(m)); } });
+}
+function unloadBiome(i: number) { if (!biomeLoaded[i]) return; biomeLoaded[i] = false; const grp = biomeProps[i]; while (grp.children.length) grp.remove(grp.children[0]); }
+let curBiome = -2;
+function stream() { const bi = biomeAt(player.position.z); if (bi === curBiome) return; curBiome = bi; for (let i = 0; i < BIOMES.length; i++) { if (Math.abs(i - bi) <= 1 || (bi === -1 && i === 0)) loadBiome(i); else if (Math.abs(i - bi) > 2) unloadBiome(i); } }
 // 기지 러닝머신 위치(모델은 아래 로더 이후 배치)
 const TM = new THREE.Vector3(8, 0, 6);
 const belt = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.1, 0.1), new THREE.MeshStandardMaterial({ emissive: 0x2288ff })); belt.visible = false; // 훈련 연출 호환용(숨김)
@@ -40,13 +67,13 @@ function modelAbs(path: string, s: number): Promise<THREE.Object3D> {
   return cache.get(path)!.then(o => { const c = o.clone(true); c.scale.setScalar(s); c.traverse(m => { (m as THREE.Mesh).castShadow = true; (m as THREE.Mesh).receiveShadow = true; }); return c; });
 }
 function place(path: string, x: number, z: number, s = 1, ry = 0) { const g = new THREE.Group(); g.position.set(x, 0, z); g.rotation.y = ry; scene.add(g); void modelAbs(path, s).then(m => g.add(m)).catch(() => {}); return g; }
-// 숲 환경(Blender 에셋)
-const forestEnv = ENVIRONMENT.filter(e => e.biome === 'forest');
-for (let i = 0; i < 46; i++) { const a = Math.random() * Math.PI * 2, r = 9 + Math.random() * 25; const e = forestEnv[i % forestEnv.length]; place(e.model, FOREST.x + Math.cos(a) * r, FOREST.z + Math.sin(a) * r, e.kind.startsWith('tree') ? 1.5 + Math.random() * 0.6 : 1 + Math.random() * 0.5, Math.random() * 6.28); }
+// 기지 장식(공용 Blender 에셋)
+for (const [k, x, z] of [['tree_oak', -26, -6], ['tree_oak', 26, -4], ['bush', -22, 18], ['flower', 20, 20], ['rock', 28, 14]] as [string, number, number][]) place(`environment/env_forest_${k}.glb`, x, z, 1.4);
+place('environment/env_common_street_lamp.glb', -9, -10, 1.2); place('environment/env_common_street_lamp.glb', 9, -10, 1.2); place('environment/env_common_bench.glb', 14, 14, 1.3);
 // 기지 건축(Blender 에셋)
-place('buildings/build_safe_arch.glb', 0, -SAFE_R + 0.5, 1.6); place('buildings/build_pet_pen.glb', -6, -4, 1.6); place('buildings/build_fountain.glb', 0, 2, 0.9);
+place('buildings/build_safe_arch.glb', 0, SAFE_LINE + 0.2, 2.2); place('buildings/build_pet_pen.glb', -6, -4, 1.6); place('buildings/build_fountain.glb', 0, 2, 0.9);
 for (let i = 0; i < 4; i++) place('buildings/build_hatch_pedestal.glb', -14 + i * 3.2, 8, 1.1);
-place('buildings/build_portal_forest.glb', 0, -36, 1.5); place('buildings/build_index_kiosk.glb', 10, -3, 1, -Math.PI / 2); place('buildings/build_shop_stall.glb', -10, 6, 1, Math.PI / 2);
+place('buildings/build_index_kiosk.glb', 10, -3, 1, -Math.PI / 2); place('buildings/build_shop_stall.glb', -10, 6, 1, Math.PI / 2);
 // 러닝머신: 현재 단계 모델
 let tmObj: THREE.Group | null = null, tmTier = -1;
 function syncTreadmill() { if (save.treadmill === tmTier) return; tmTier = save.treadmill; if (tmObj) scene.remove(tmObj); tmObj = place(TREADMILLS[tmTier].model, TM.x, TM.z, 1.7, Math.PI); }
@@ -56,15 +83,14 @@ model(PLAYERS[0].model, 2.1).then(m => { m.position.y = -0.95; m.rotation.y = 0;
 player.position.set(0, 0, 4); scene.add(player);
 let carried: { eggId: string; src: number; obj: THREE.Object3D } | null = null;
 
-// guardian
-const guardian = new THREE.Group(); scene.add(guardian);
-model(GUARDIANS.find(g => g.id === 'guardian_forest')!.model, 6).then(m => guardian.add(m));
+// 수호자(지역별 13) — 오프라인 FSM, 온라인은 서버 스냅샷
 type GState = 'SLEEP' | 'WAKE_UP' | 'CHASE' | 'ATTACK' | 'RECOVER' | 'RETURN_HOME';
-const G = { state: 'SLEEP' as GState, t: 0, home: new THREE.Vector3(FOREST.x, 0, FOREST.z - 6) };
-guardian.position.copy(G.home);
-// wild eggs
-interface Wild { eggId: string; pos: THREE.Vector3; obj: THREE.Group; taken: boolean }
-const wild: Wild[] = EGG_TYPES.map((id, i) => { const e = EGGS.find(x => x.id === id)!; const g = new THREE.Group(); const sp = eggSpawn(i); const p = new THREE.Vector3(sp.x, 0, sp.z); g.position.copy(p); scene.add(g); model(e.model, 1.4 + e.weight * 0.1).then(m => g.add(m)); return { eggId: e.id, pos: p, obj: g, taken: false }; });
+interface Guard { obj: THREE.Group; state: GState; t: number; home: THREE.Vector3; speed: number; loaded: boolean; sx: number; sz: number }
+const guards: Guard[] = GUARDS.map(g => { const obj = new THREE.Group(); obj.position.set(g.home.x, 0, g.home.z); scene.add(obj); return { obj, state: 'SLEEP', t: 0, home: new THREE.Vector3(g.home.x, 0, g.home.z), speed: g.speed, loaded: false, sx: g.home.x, sz: g.home.z }; });
+let chaser: Guard | null = null;
+// 둥지 알(39)
+interface Wild { eggId: string; biome: number; pos: THREE.Vector3; obj: THREE.Group; taken: boolean; loaded: boolean }
+const wild: Wild[] = NESTS.map(n => { const g = new THREE.Group(); const p = new THREE.Vector3(n.x, 0, n.z); g.position.copy(p); scene.add(g); return { eggId: n.eggId, biome: n.biome, pos: p, obj: g, taken: false, loaded: false }; });
 // pets at base
 const petObjs = new Map<string, THREE.Object3D>();
 function syncPets() {
@@ -108,12 +134,12 @@ function interact() {
   if (w && !carried && save.eggs.length < save.slots) {
     const d = EGGS.find(e => e.id === w.eggId)!; w.taken = true; const idx = wild.indexOf(w);
     scene.remove(w.obj); const o = new THREE.Group(); carried = { eggId: w.eggId, src: idx, obj: o }; scene.add(o); model(d.model, 1.2).then(m => o.add(m));
-    chased = true; G.state = G.state === 'SLEEP' ? 'WAKE_UP' : 'CHASE'; G.t = 0; beep(120, 0.4, 'sawtooth'); say(`${d.name} 훔침! 안전구역으로 도망!`);
+    chased = true; chaser = guards[w.biome]; chaser.state = chaser.state === 'SLEEP' ? 'WAKE_UP' : 'CHASE'; chaser.t = 0; beep(120, 0.4, 'sawtooth'); say(`${d.name} 훔침! 안전구역으로 도망!`);
   } else if (w && save.eggs.length >= save.slots) say('부화 슬롯이 가득 찼습니다');
 }
 function shopBuy() { if (online()) { net!.send({ t: 'buy' }); return; } const n = TREADMILLS[save.treadmill + 1]; if (!n) return say('최고 단계'); if (buyTreadmill(save)) { say(`${n.name} 구매!`); beep(660); persist(); } else say(`돈 부족: ${fmt(n.cost)} 필요`); }
 function endChase(success: boolean) {
-  chased = false; G.state = 'RETURN_HOME'; $('chase').style.display = 'none';
+  chased = false; if (chaser) chaser.state = 'RETURN_HOME'; chaser = null; $('chase').style.display = 'none';
   if (!carried) return; const c = carried; carried = null; scene.remove(c.obj);
   if (success) { addEgg(save, c.eggId, Date.now()); syncEggs(); say('귀환 성공! 알이 부화 슬롯에 놓였습니다'); beep(880, 0.3); persist(); }
   else { const w = wild[c.src]; w.taken = false; scene.add(w.obj); say('잡혔다! 알을 잃었습니다'); beep(90, 0.5, 'square'); player.position.set(0, 0, 4); }
@@ -128,7 +154,6 @@ const WS = qs.get('ws') || SERVER.replace(/^http/, 'ws');
 let net: Net | null = null;
 let events: { id: string; kind: string; mult: number; end: number; title: string }[] = [];
 let role = 'PLAYER';
-const srv = { gx: G.home.x, gz: G.home.z };
 let profileReady = false;
 const remotes = new Map<string, { o: THREE.Group; tx: number; tz: number; ry: number }>();
 function bindNet(net: Net) {
@@ -136,7 +161,7 @@ function bindNet(net: Net) {
   net.onLeft = id => { const r = remotes.get(id); if (r) { scene.remove(r.o); remotes.delete(id); } };
   net.onError = e => say(e === 'FULL' ? '해당 서버가 가득 찼습니다. 빈자리가 생긴 후 다시 시도해 주세요.' : e === 'NOT_FOUND' ? '존재하지 않거나 종료된 서버입니다.' : '올바른 서버 코드를 입력해 주세요.', 5);
   net.onMsg = m => {
-    if (m.t === 'snap') { srv.gx = m.g.x; srv.gz = m.g.z; m.eggs.forEach((st: number, i: number) => { const w = wild[i]; if (!w) return; const take = st !== 0; if (take && !w.taken) { w.taken = true; scene.remove(w.obj); } else if (!take && w.taken && !(carried && carried.src === i)) { w.taken = false; scene.add(w.obj); } }); }
+    if (m.t === 'snap') { (m.g as number[][]).forEach((a, i) => { const gd = guards[i]; if (gd) { gd.sx = a[0]; gd.sz = a[1]; gd.state = a[2] === 0 ? 'SLEEP' : a[2] === 2 ? 'RETURN_HOME' : 'CHASE'; } }); m.eggs.forEach((st: number, i: number) => { const w = wild[i]; if (!w) return; const take = st !== 0; if (take && !w.taken) { w.taken = true; scene.remove(w.obj); } else if (!take && w.taken && !(carried && carried.src === i)) { w.taken = false; scene.add(w.obj); } }); }
     else if (m.t === 'steal_ok') { const d = EGGS.find(e => e.id === m.eggId)!; const o = new THREE.Group(); carried = { eggId: m.eggId, src: m.i, obj: o }; wild[m.i].taken = true; scene.remove(wild[m.i].obj); scene.add(o); model(d.model, 1.2).then(x => o.add(x)); beep(120, 0.4, 'sawtooth'); say(`${d.name} 훔침! 안전구역으로 도망!`); }
     else if (m.t === 'steal_fail') say(m.reason === 'SLOTS_FULL' ? '부화 슬롯이 가득 찼습니다' : m.reason === 'TAKEN' ? '다른 플레이어가 먼저 가져갔습니다' : m.reason === 'ALREADY_CARRYING' ? '이미 알을 들고 있습니다' : '알에 더 가까이 가세요');
     else if (m.t === 'returned') { if (carried) { scene.remove(carried.obj); carried = null; } say('귀환 성공! 알이 부화 슬롯에 놓였습니다'); beep(880, 0.3); }
@@ -167,22 +192,25 @@ function frame() {
     const wx = ix * c + iz * s, wz = -ix * s + iz * c; player.position.x += wx * spd * l * dt; player.position.z += wz * spd * l * dt;
     player.rotation.y = Math.atan2(wx, wz); pb.position.y = 0.95 + Math.abs(Math.sin(t * 14)) * 0.12;
   } else pb.position.y = 0.95;
-  player.position.x = Math.max(-190, Math.min(190, player.position.x)); player.position.z = Math.max(-190, Math.min(190, player.position.z));
-  const inSafe = Math.hypot(player.position.x, player.position.z) < SAFE_R;
+  { const [cx, cz] = clampToWorld(player.position.x, player.position.z); player.position.x = cx; player.position.z = cz; }
+  const inSafe = player.position.z > SAFE_LINE; stream();
   if (carried) { carried.obj.position.set(player.position.x, 2.4, player.position.z); carried.obj.rotation.y += dt * 2; if (inSafe && !online()) endChase(true); }
-  // guardian FSM
-  const gp = guardian.position;
-  if (online()) { /* 서버 스냅샷 적용(아래 onMsg) */ gp.x += (srv.gx - gp.x) * Math.min(1, dt * 10); gp.z += (srv.gz - gp.z) * Math.min(1, dt * 10); guardian.rotation.y = Math.atan2(srv.gx - gp.x, srv.gz - gp.z) || guardian.rotation.y; }
-  else if (G.state === 'WAKE_UP') { G.t += dt; guardian.scale.y = 1 + Math.sin(G.t * 8) * 0.05; if (G.t > 1) { G.state = 'CHASE'; G.t = 0; guardian.scale.y = 1; } }
-  else if (G.state === 'CHASE') {
-    if (!chased || !carried) G.state = 'RETURN_HOME'; else {
-      v.set(player.position.x - gp.x, 0, player.position.z - gp.z); const d = v.length(); v.normalize(); gp.addScaledVector(v, (base * 0.92 + 1) * dt); guardian.rotation.y = Math.atan2(v.x, v.z);
-      if (d < 3) { G.state = 'ATTACK'; G.t = 0; }
-      if (Math.hypot(gp.x, gp.z) < SAFE_R + 2) { v.set(gp.x, 0, gp.z).normalize(); gp.copy(v.multiplyScalar(SAFE_R + 2)); } // 안전구역 진입 불가
-    }
-  } else if (G.state === 'ATTACK') { G.t += dt; guardian.position.y = Math.sin(Math.min(G.t * 3, 1) * Math.PI) * 0.8; if (G.t > 0.5 && carried && dist2(gp, player.position) < 4.5) { endChase(false); G.state = 'RECOVER'; G.t = 0; } else if (G.t > 0.7) { G.state = carried ? 'CHASE' : 'RECOVER'; G.t = 0; guardian.position.y = 0; } }
-  else if (G.state === 'RECOVER') { G.t += dt; guardian.position.y = 0; if (G.t > 1.5) G.state = 'RETURN_HOME'; }
-  else if (G.state === 'RETURN_HOME') { v.set(G.home.x - gp.x, 0, G.home.z - gp.z); const d = v.length(); if (d < 0.5) { G.state = 'SLEEP'; } else { v.normalize(); gp.addScaledVector(v, 8 * dt); guardian.rotation.y = Math.atan2(v.x, v.z); } }
+  // 수호자: 온라인=서버 위치 보간, 오프라인=로컬 FSM(추격 중인 1마리)
+  for (const gd of guards) {
+    const gp = gd.obj.position;
+    if (online()) { const dx = gd.sx - gp.x, dz = gd.sz - gp.z; gp.x += dx * Math.min(1, dt * 10); gp.z += dz * Math.min(1, dt * 10); if (Math.hypot(dx, dz) > 0.05) gd.obj.rotation.y = Math.atan2(dx, dz); continue; }
+    if (gd.state === 'SLEEP') { gd.obj.scale.y = 1 + Math.sin(t * 1.5) * 0.015; continue; }
+    if (gd.state === 'WAKE_UP') { gd.t += dt; gd.obj.scale.y = 1 + Math.sin(gd.t * 8) * 0.06; if (gd.t > 1) { gd.state = 'CHASE'; gd.t = 0; gd.obj.scale.y = 1; } }
+    else if (gd.state === 'CHASE') {
+      if (!chased || !carried || chaser !== gd) gd.state = 'RETURN_HOME'; else {
+        v.set(player.position.x - gp.x, 0, player.position.z - gp.z); const d = v.length(); v.normalize(); gp.addScaledVector(v, gd.speed * dt); gd.obj.rotation.y = Math.atan2(v.x, v.z);
+        gp.z = Math.min(gp.z, SAFE_LINE - 2); gp.x = Math.max(-LANE_HALF + 1, Math.min(LANE_HALF - 1, gp.x)); // 안전구역·벽 통과 불가
+        if (d < 3) { gd.state = 'ATTACK'; gd.t = 0; }
+      }
+    } else if (gd.state === 'ATTACK') { gd.t += dt; gp.y = Math.sin(Math.min(gd.t * 3, 1) * Math.PI) * 0.8; if (gd.t > 0.5 && carried && dist2(gp, player.position) < 4.5) { gp.y = 0; endChase(false); gd.state = 'RECOVER'; gd.t = 0; } else if (gd.t > 0.7) { gd.state = carried ? 'CHASE' : 'RECOVER'; gd.t = 0; gp.y = 0; } }
+    else if (gd.state === 'RECOVER') { gd.t += dt; gp.y = 0; if (gd.t > 1.5) gd.state = 'RETURN_HOME'; }
+    else if (gd.state === 'RETURN_HOME') { v.set(gd.home.x - gp.x, 0, gd.home.z - gp.z); const d = v.length(); if (d < 0.5) gd.state = 'SLEEP'; else { v.normalize(); gp.addScaledVector(v, Math.min(d, 9 * dt)); gd.obj.rotation.y = Math.atan2(v.x, v.z); } }
+  }
   if (online()) chased = !!carried; $('chase').style.display = chased ? 'block' : 'none';
   // hatching + income
   if (now - lastHatchCheck > 500 && !online()) { lastHatchCheck = now; const g = tickIncome(save, now); const h = hatchReady(save, now); if (h.length) { syncEggs(); syncPets(); h.forEach(p => { const d = PETS.find(x => x.id === p.petId)!; say(`🐣 ${d.name} 부화! (${RARITIES.find(r => r.id === d.rarity)!.name})`, 4); beep(990, 0.4); }); persist(); } void g; }
@@ -193,8 +221,9 @@ function frame() {
   const tgt = new THREE.Vector3(player.position.x, 1.8, player.position.z); cam.position.set(tgt.x + Math.sin(camYaw) * Math.cos(camPitch) * camDist, tgt.y + Math.sin(camPitch) * camDist, tgt.z + Math.cos(camYaw) * Math.cos(camPitch) * camDist); cam.lookAt(tgt);
   // HUD
   $('money').textContent = `💰 ${fmt(save.money)}`; $('spd').textContent = `👟 ${fmt(save.train)} (속도 ${spd.toFixed(1)})`; $('inc').textContent = `🐾 +${fmt(incomePerSec(save))}/s`;
-  const nxt = TREADMILLS[save.treadmill + 1]; $('shop').textContent = nxt ? `${nxt.name.slice(0, 2)}\n${fmt(nxt.cost)}` : 'MAX';
-  $('zone').textContent = inSafe ? '🟢 안전구역' : dist2(player.position, FOREST) < 32 ? '🌲 숲 (위험)' : '🌿 평원';
+  void LANE_END; const nxt = TREADMILLS[save.treadmill + 1]; $('shop').textContent = nxt ? `${nxt.name.slice(0, 2)}\n${fmt(nxt.cost)}` : 'MAX';
+  { const bi = biomeAt(player.position.z); const b = BIOMES[bi]; $('zone').textContent = inSafe ? '🟢 기지(안전구역)' : bi < 0 ? '🌉 다리' : `${b.ko} · 권장 ${fmt(b.requiredSpeed)}${save.train < b.requiredSpeed ? ' ⚠️' : ''}`;
+    const sky = new THREE.Color(bi < 0 ? '#9fd3ff' : b.sky); (scene.background as THREE.Color).lerp(sky, Math.min(1, dt * 2)); (scene.fog as THREE.Fog).color.copy(scene.background as THREE.Color); }
   $('list').innerHTML = save.eggs.map(e => { const d = EGGS.find(x => x.id === e.eggId)!; const s = Math.max(0, Math.ceil((e.hatchAt - now) / 1000)); return `🥚 ${d.name} — ${s}s`; }).join('<br>') + `<br>펫 ${save.pets.length}마리 · 슬롯 ${save.eggs.length}/${save.slots}`;
   const canAct = training || (dist2(player.position, TM) < 3.5 && !carried) || !!nearWild(); ($('act') as HTMLElement).style.display = canAct ? 'block' : 'none';
   if (msgT > 0) { msgT -= dt; if (msgT <= 0) $('msg').textContent = ''; }
@@ -205,7 +234,7 @@ function frame() {
 }
 syncEggs(); syncPets(); syncTreadmill(); setInterval(syncTreadmill, 500);
 if (offline > 1) say(`오프라인 수익 +${fmt(offline)}${wasHatched.length ? `, 펫 ${wasHatched.length}마리 부화!` : ''}`, 4);
-(window as any).__game = { remotes, get net() { return net; }, save: () => save, player, G, get carried() { return carried; }, interact, wild };
+(window as any).__game = { remotes, get net() { return net; }, save: () => save, player, guards, get carried() { return carried; }, interact, wild };
 // 로비
 async function loadServers() {
   const box = $('servers'); box.textContent = '서버 목록 확인 중… (서버가 잠들어 있으면 깨어나는 데 최대 1분)';

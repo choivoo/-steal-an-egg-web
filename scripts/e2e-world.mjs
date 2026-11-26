@@ -3,7 +3,7 @@ const b = await chromium.launch({ executablePath: '/opt/pw-browsers/chromium', a
 const mk = async () => { const p = await b.newPage({ viewport: { width: 844, height: 390 } }); await p.goto('http://localhost:4173/?ws=ws://localhost:8080'); return p; };
 const A = await mk(), B = await mk(); await A.waitForTimeout(3000);
 const goto = (p, x, z) => p.evaluate(([x, z]) => window.__game.player.position.set(x, 0, z), [x, z]);
-await goto(A, -12, -64); await goto(B, -12, -64); await A.waitForTimeout(5000); // 서버 속도제한 때문에 도착 대기
+await goto(A, -7, -47); await goto(B, -7, -47); await A.waitForTimeout(5000); // 서버 속도제한 때문에 도착 대기
 const st = p => p.evaluate(() => ({ carried: !!window.__game.carried, eggTaken: window.__game.wild.map(w => w.taken) }));
 await A.evaluate(() => window.__game.interact()); await B.evaluate(() => window.__game.interact()); await A.waitForTimeout(800);
 console.log('A', await st(A)); console.log('B', await st(B));
