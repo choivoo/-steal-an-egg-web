@@ -15,9 +15,9 @@ for m in metas:
     pts = [o.matrix_world @ mathutils.Vector(c) for o in objs for c in o.bound_box]
     mn = mathutils.Vector([min(p[i] for p in pts) for i in range(3)]); mx = mathutils.Vector([max(p[i] for p in pts) for i in range(3)])
     c = (mn + mx) / 2; r = max((mx - mn).length * 0.5, 0.25)
-    s = bpy.context.scene; s.render.engine = 'BLENDER_WORKBENCH'; s.display.shading.light = 'STUDIO'; s.display.shading.color_type = 'MATERIAL'
+    s = bpy.context.scene; s.render.engine = 'BLENDER_WORKBENCH'; s.display.shading.light = 'STUDIO'; s.display.shading.color_type = 'TEXTURE'; s.display.shading.show_backface_culling = True
     s.display.shading.show_cavity = True; s.display.shading.cavity_type = 'BOTH'; s.display.shading.show_shadows = True; s.display.shading.show_specular_highlight = True
-    s.display.shading.show_object_outline = True; s.render.film_transparent = True; s.render.resolution_x = s.render.resolution_y = size
+    s.display.shading.show_object_outline = False; s.render.film_transparent = True; s.render.resolution_x = s.render.resolution_y = size
     cam = bpy.data.objects.new('cam', bpy.data.cameras.new('cam')); s.collection.objects.link(cam); s.camera = cam; cam.data.lens = 50
     for v in vlist:
         az, el = VIEWS[v]; a = math.radians(az - 90); e = math.radians(el); dist = r / math.tan(math.radians(18)) * 0.85

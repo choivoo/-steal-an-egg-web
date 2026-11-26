@@ -1,8 +1,8 @@
 import { chromium } from 'playwright';
 const b = await chromium.launch({ executablePath: '/opt/pw-browsers/chromium', args: ['--use-gl=swiftshader', '--enable-unsafe-swiftshader', '--no-sandbox'] });
 const p = await b.newPage({ viewport: { width: 844, height: 390 } }); const errs = [];
-p.on('console', m => { if (m.type() === 'error') errs.push(m.text()); }); p.on('response', r => { if (r.status() >= 400) errs.push(r.status() + ' ' + r.url()); }); p.on('pageerror', e => errs.push(String(e)));
-await p.goto('http://localhost:4173/'); await p.waitForTimeout(4000);
+p.on('console', m => { if (m.type() === 'error') errs.push(m.text() + ' @ ' + (m.location()?.url ?? '')); }); p.on('response', r => { if (r.status() >= 400) errs.push(r.status() + ' ' + r.url()); }); p.on('pageerror', e => errs.push(String(e)));
+await p.goto('http://localhost:4173/?offline=1'); await p.waitForTimeout(6000);
 const g = () => p.evaluate(() => { const x = window.__game; return { money: x.save().money, train: x.save().train, eggs: x.save().eggs.length, pets: x.save().pets.length, carried: !!x.carried, gs: x.G.state }; });
 console.log('start', await g());
 await p.evaluate(() => { const x = window.__game; x.player.position.set(8, 0, 6); x.interact(); }); await p.waitForTimeout(3000);

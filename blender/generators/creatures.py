@@ -23,7 +23,7 @@ def build_creature(spec, boss=False):
     # 눈
     n = f.get('eyes', 2); ey, ez = hp[1] - hr * 0.82, hp[2] + hr * 0.18
     xs = [0] if n == 1 else [-hr * 0.42, hr * 0.42] if n == 2 else [-hr * 0.5, 0, hr * 0.5] if n == 3 else [-hr * 0.5, -hr * 0.2, hr * 0.2, hr * 0.5]
-    er = hr * (0.26 if n <= 2 else 0.18)
+    er = hr * (0.34 if n <= 2 else 0.22)
     for i, x in enumerate(xs):
         z = ez + (hr * 0.18 if n == 4 and i in (1, 2) else 0)
         k.ball((x, ey, z), (er, er * 0.55, er * 1.1), mwhite, seg=12)
@@ -145,7 +145,7 @@ def build_body(k, arche, mb, mbelly, ma, mg, mhorn, sB, sH, sL):
             k.mirror([k.plate((0.28 * sB, -0.1, h - 0.1), (0.16, 0.1, 0.02), ma, rot=(D(10), D(-30), 0))])
             hr = 0.27 * sH; A.update(head=(0, -0.42 * sB, h + 0.05), hr=hr, back=(0, 0, h + 0.3 * sB), tail=(0, 0.6, h), len=1.0 * sB, body=(0, 0, h), bodyr=(0.28 * sB, 0.55 * sB, 0.36 * sB), wing=(0.25, 0, h))
     elif arche == 'slime':
-        h = 0.42 * sB; mj = k.M(mb.node_tree.nodes['Principled BSDF'].inputs['Base Color'].default_value[:3], 0.1, 0, 0.2, alpha=0.78)
+        h = 0.42 * sB; mj = k.M(tuple(mb['rgb']), 0.1, 0, 0.2, alpha=0.78)
         k.ball((0, 0, h), (0.5 * sB, 0.5 * sB, 0.42 * sB), mj, seg=24); k.ball((0, 0, h * 0.3), (0.58 * sB, 0.58 * sB, 0.18), mj, seg=20); k.ico((0, 0.05, h), 0.17 * sB, mg, sub=2)
         for a in (0.5, 2.3, 4.2): k.ball((0.48 * sB * math.cos(a), 0.48 * sB * math.sin(a), 0.1), (0.14, 0.14, 0.11), mj)
         A.update(head=(0, -0.05, h + 0.05), hr=0.45 * sB, back=(0, 0.05, h * 1.9), tail=(0, 0.45, 0.2), len=0.5, body=(0, 0, h), bodyr=(0.5, 0.5, 0.42), wing=(0.4, 0, h))
@@ -165,7 +165,7 @@ def build_body(k, arche, mb, mbelly, ma, mg, mhorn, sB, sH, sL):
         k.mirror(lg); k.ico((0, -0.33 * sB, 1.0 * sB), 0.12, mg, sub=1)
         A.update(head=(0, -0.05, 1.55 * sB), hr=hr, back=(0, 0.25, 1.35 * sB), tail=(0, 0.35, 0.8), len=0.8 * sB, body=(0, 0, 0.95 * sB), bodyr=(0.45, 0.32, 0.42), wing=(0.4, 0.2, 1.2 * sB))
     elif arche == 'spirit':
-        h = 0.9; hr = 0.32 * sH; k.ball((0, 0, h), (hr, hr, hr), mb, seg=20); k.ball((0, 0, h), (hr * 1.3,) * 3, k.M(mg.node_tree.nodes['Principled BSDF'].inputs['Base Color'].default_value[:3], 0.2, 0, 1.2, alpha=0.3), seg=16)
+        h = 0.9; hr = 0.32 * sH; k.ball((0, 0, h), (hr, hr, hr), mb, seg=20); k.ball((0, 0, h), (hr * 1.3,) * 3, k.M(tuple(mg['rgb']), 0.2, 0, 1.2, alpha=0.3), seg=16)
         for j in range(4): k.cone((0.08 * math.sin(j * 2), 0.18 + j * 0.13, h - 0.3 - j * 0.12), 0.18 - j * 0.035, 0.35, mb, rot=(D(-50 - j * 8), 0, 0), seg=10)
         for j in range(3): a = j * 2.1; k.ico((0.55 * math.cos(a), 0.55 * math.sin(a), h + 0.1 * j), 0.06, mg, sub=1)
         A.update(head=(0, -0.02, h), hr=hr, back=(0, 0.1, h + hr), tail=(0, 0.4, h - 0.4), len=0.5, body=(0, 0, h), bodyr=(hr, hr, hr), wing=(0.25, 0.05, h))

@@ -1,1 +1,1 @@
-{"id": "env_volcano_basalt", "cat": "environment", "model": "environment/env_volcano_basalt.glb", "tris": 80, "dims": [1.8248374462127686, 1.5671433210372925, 1.1778616905212402], "bytes": 9364, "hash": "cc50ea427c0f90ac", "gen": "v2.0", "sec": 0.07}
+{"id": "env_volcano_basalt", "cat": "environment", "model": "environment/env_volcano_basalt.glb", "tris": 704, "dims": [1.7796423435211182, 1.6868457794189453, 1.0011824369430542], "bytes": 55940, "hash": "fd5d7ff9ec846c1b", "gen": "v2.0", "sec": 0.1}

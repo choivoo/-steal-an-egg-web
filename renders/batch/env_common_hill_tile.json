@@ -1,1 +1,1 @@
-{"id": "env_common_hill_tile", "cat": "environment", "model": "environment/env_common_hill_tile.glb", "tris": 224, "dims": [4.999999761581421, 5.0, 1.600000023841858], "bytes": 6648, "hash": "dd5eeb92791ddc99", "gen": "v2.0", "sec": 0.06}
+{"id": "env_common_hill_tile", "cat": "environment", "model": "environment/env_common_hill_tile.glb", "tris": 440, "dims": [5.400000095367432, 5.400000095367432, 1.6128000020980835], "bytes": 35908, "hash": "6f4b7c585d5f81c9", "gen": "v2.0", "sec": 0.07}

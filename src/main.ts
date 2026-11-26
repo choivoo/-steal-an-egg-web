@@ -1,6 +1,8 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
-import { EGGS, PETS, TREADMILLS, RARITIES } from './data/defs';
+import { MeshoptDecoder } from 'three/examples/jsm/libs/meshopt_decoder.module.js';
+import { EGGS, PETS, TREADMILLS, RARITIES, ENVIRONMENT, GUARDIANS, PLAYERS } from './data/defs';
+import { EGG_TYPES, eggSpawn } from './data/worldConsts';
 import { Net } from './net/client';
 import { fmt, worldSpeed, carrySpeed, newSave, addEgg, hatchReady, tickIncome, buyTreadmill, incomePerSec, Save } from './engine/logic';
 
@@ -23,40 +25,46 @@ const FOREST = new THREE.Vector3(0, 0, -70);
 const forestFloor = new THREE.Mesh(new THREE.CircleGeometry(30, 40), new THREE.MeshStandardMaterial({ color: 0x2e6b34 })); forestFloor.rotation.x = -Math.PI / 2; forestFloor.position.set(FOREST.x, 0.02, FOREST.z); scene.add(forestFloor);
 const SAFE_R = 14;
 const safe = new THREE.Mesh(new THREE.RingGeometry(SAFE_R - 0.4, SAFE_R, 64), new THREE.MeshBasicMaterial({ color: 0x66ffcc, side: THREE.DoubleSide })); safe.rotation.x = -Math.PI / 2; safe.position.y = 0.05; scene.add(safe);
-for (let i = 0; i < 40; i++) { // trees
-  const a = Math.random() * Math.PI * 2, r = 8 + Math.random() * 26; const t = new THREE.Group();
-  const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.4, 0.6, 4, 6), new THREE.MeshStandardMaterial({ color: 0x6b4a2b })); trunk.position.y = 2; t.add(trunk);
-  const leaves = new THREE.Mesh(new THREE.ConeGeometry(2.4, 6, 7), new THREE.MeshStandardMaterial({ color: 0x1f7a3a })); leaves.position.y = 6; t.add(leaves);
-  t.position.set(FOREST.x + Math.cos(a) * r, 0, FOREST.z + Math.sin(a) * r); t.children.forEach(c => c.castShadow = true); scene.add(t);
-}
-// treadmill at base
+// 기지 러닝머신 위치(모델은 아래 로더 이후 배치)
 const TM = new THREE.Vector3(8, 0, 6);
-const tmMesh = new THREE.Group();
-tmMesh.add(new THREE.Mesh(new THREE.BoxGeometry(2.4, 0.4, 5), new THREE.MeshStandardMaterial({ color: 0x333a44, metalness: 0.6, roughness: 0.4 })));
-const belt = new THREE.Mesh(new THREE.BoxGeometry(2, 0.1, 4.6), new THREE.MeshStandardMaterial({ color: 0x111, emissive: 0x2288ff, emissiveIntensity: 0.6 })); belt.position.y = 0.25; tmMesh.add(belt);
-tmMesh.position.copy(TM).setY(0.2); scene.add(tmMesh);
-
-const loader = new GLTFLoader(); const cache = new Map<string, Promise<THREE.Object3D>>();
+const belt = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.1, 0.1), new THREE.MeshStandardMaterial({ emissive: 0x2288ff })); belt.visible = false; // 훈련 연출 호환용(숨김)
+const loader = new GLTFLoader(); loader.setMeshoptDecoder(MeshoptDecoder); const cache = new Map<string, Promise<THREE.Object3D>>();
 const BASE = import.meta.env.BASE_URL + 'assets/models/';
 function model(path: string, h: number): Promise<THREE.Object3D> {
   if (!cache.has(path)) cache.set(path, loader.loadAsync(BASE + path).then(g => g.scene));
   return cache.get(path)!.then(o => { const c = o.clone(true); c.traverse(m => { (m as THREE.Mesh).castShadow = true; }); const b = new THREE.Box3().setFromObject(c); const s = h / (b.max.y - b.min.y || 1); c.scale.setScalar(s); const b2 = new THREE.Box3().setFromObject(c); c.position.y -= b2.min.y; const w = new THREE.Group(); w.add(c); return w; });
 }
-// player
-const player = new THREE.Group(); const pb = new THREE.Mesh(new THREE.CapsuleGeometry(0.45, 0.9, 4, 12), new THREE.MeshStandardMaterial({ color: 0xffcc66 })); pb.position.y = 0.95; pb.castShadow = true; player.add(pb);
-const head = new THREE.Mesh(new THREE.SphereGeometry(0.38, 16, 12), new THREE.MeshStandardMaterial({ color: 0xffe0b0 })); head.position.y = 1.9; player.add(head);
+/** 실제 크기(블렌더 유닛 × s)로 배치 — 환경·건축용 */
+function modelAbs(path: string, s: number): Promise<THREE.Object3D> {
+  if (!cache.has(path)) cache.set(path, loader.loadAsync(BASE + path).then(g => g.scene));
+  return cache.get(path)!.then(o => { const c = o.clone(true); c.scale.setScalar(s); c.traverse(m => { (m as THREE.Mesh).castShadow = true; (m as THREE.Mesh).receiveShadow = true; }); return c; });
+}
+function place(path: string, x: number, z: number, s = 1, ry = 0) { const g = new THREE.Group(); g.position.set(x, 0, z); g.rotation.y = ry; scene.add(g); void modelAbs(path, s).then(m => g.add(m)).catch(() => {}); return g; }
+// 숲 환경(Blender 에셋)
+const forestEnv = ENVIRONMENT.filter(e => e.biome === 'forest');
+for (let i = 0; i < 46; i++) { const a = Math.random() * Math.PI * 2, r = 9 + Math.random() * 25; const e = forestEnv[i % forestEnv.length]; place(e.model, FOREST.x + Math.cos(a) * r, FOREST.z + Math.sin(a) * r, e.kind.startsWith('tree') ? 1.5 + Math.random() * 0.6 : 1 + Math.random() * 0.5, Math.random() * 6.28); }
+// 기지 건축(Blender 에셋)
+place('buildings/build_safe_arch.glb', 0, -SAFE_R + 0.5, 1.6); place('buildings/build_pet_pen.glb', -6, -4, 1.6); place('buildings/build_fountain.glb', 0, 2, 0.9);
+for (let i = 0; i < 4; i++) place('buildings/build_hatch_pedestal.glb', -14 + i * 3.2, 8, 1.1);
+place('buildings/build_portal_forest.glb', 0, -36, 1.5); place('buildings/build_index_kiosk.glb', 10, -3, 1, -Math.PI / 2); place('buildings/build_shop_stall.glb', -10, 6, 1, Math.PI / 2);
+// 러닝머신: 현재 단계 모델
+let tmObj: THREE.Group | null = null, tmTier = -1;
+function syncTreadmill() { if (save.treadmill === tmTier) return; tmTier = save.treadmill; if (tmObj) scene.remove(tmObj); tmObj = place(TREADMILLS[tmTier].model, TM.x, TM.z, 1.7, Math.PI); }
+// player (Blender 캐릭터)
+const player = new THREE.Group(); const pb = new THREE.Group(); pb.position.y = 0.95; player.add(pb);
+model(PLAYERS[0].model, 2.1).then(m => { m.position.y = -0.95; m.rotation.y = 0; pb.add(m); });
 player.position.set(0, 0, 4); scene.add(player);
 let carried: { eggId: string; src: number; obj: THREE.Object3D } | null = null;
 
 // guardian
 const guardian = new THREE.Group(); scene.add(guardian);
-model('guardians/ironbeak.glb', 6).then(m => guardian.add(m));
+model(GUARDIANS.find(g => g.id === 'guardian_forest')!.model, 6).then(m => guardian.add(m));
 type GState = 'SLEEP' | 'WAKE_UP' | 'CHASE' | 'ATTACK' | 'RECOVER' | 'RETURN_HOME';
 const G = { state: 'SLEEP' as GState, t: 0, home: new THREE.Vector3(FOREST.x, 0, FOREST.z - 6) };
 guardian.position.copy(G.home);
 // wild eggs
 interface Wild { eggId: string; pos: THREE.Vector3; obj: THREE.Group; taken: boolean }
-const wild: Wild[] = EGGS.map((e, i) => { const g = new THREE.Group(); const p = new THREE.Vector3(FOREST.x - 12 + i * 12, 0, FOREST.z + 4); g.position.copy(p); scene.add(g); model(e.model, 1.4 + e.weight * 0.1).then(m => g.add(m)); return { eggId: e.id, pos: p, obj: g, taken: false }; });
+const wild: Wild[] = EGG_TYPES.map((id, i) => { const e = EGGS.find(x => x.id === id)!; const g = new THREE.Group(); const sp = eggSpawn(i); const p = new THREE.Vector3(sp.x, 0, sp.z); g.position.copy(p); scene.add(g); model(e.model, 1.4 + e.weight * 0.1).then(m => g.add(m)); return { eggId: e.id, pos: p, obj: g, taken: false }; });
 // pets at base
 const petObjs = new Map<string, THREE.Object3D>();
 function syncPets() {
@@ -195,7 +203,7 @@ function frame() {
   $('net').textContent = !net ? '⚪ 오프라인 모드' : net.status === 'online' && net.info ? `🟢 서버 ${net.info.code} · ${net.info.players}/${net.info.max} · 접속 ${net.info.online}명 · 서버 ${net.info.servers}개` : net.status === 'connecting' ? '🟡 서버 연결 중…' : '🔴 서버 연결 실패(오프라인 모드)';
   renderer.render(scene, cam); requestAnimationFrame(frame);
 }
-syncEggs(); syncPets();
+syncEggs(); syncPets(); syncTreadmill(); setInterval(syncTreadmill, 500);
 if (offline > 1) say(`오프라인 수익 +${fmt(offline)}${wasHatched.length ? `, 펫 ${wasHatched.length}마리 부화!` : ''}`, 4);
 (window as any).__game = { remotes, get net() { return net; }, save: () => save, player, G, get carried() { return carried; }, interact, wild };
 // 로비

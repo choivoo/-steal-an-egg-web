@@ -1,1 +1,1 @@
-{"id": "env_storm_cloud_pillar", "cat": "environment", "model": "environment/env_storm_cloud_pillar.glb", "tris": 600, "dims": [1.4974145293235779, 1.5605949759483337, 3.050000101327896], "bytes": 21496, "hash": "bcf701f86396bc80", "gen": "v2.0", "sec": 0.09}
+{"id": "env_storm_cloud_pillar", "cat": "environment", "model": "environment/env_storm_cloud_pillar.glb", "tris": 2640, "dims": [1.652146339416504, 1.6565947532653809, 3.0564000606536865], "bytes": 202744, "hash": "c639726fd8d78adf", "gen": "v2.0", "sec": 0.11}

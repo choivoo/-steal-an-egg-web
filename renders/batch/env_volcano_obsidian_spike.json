@@ -1,1 +1,1 @@
-{"id": "env_volcano_obsidian_spike", "cat": "environment", "model": "environment/env_volcano_obsidian_spike.glb", "tris": 60, "dims": [1.3136016130447388, 1.3808695673942566, 1.512235701084137], "bytes": 5588, "hash": "0e5bc79379e3bcec", "gen": "v2.0", "sec": 0.08}
+{"id": "env_volcano_obsidian_spike", "cat": "environment", "model": "environment/env_volcano_obsidian_spike.glb", "tris": 1320, "dims": [1.2360150814056396, 1.2371007204055786, 1.5187984704971313], "bytes": 102704, "hash": "609ea4be15a9fa40", "gen": "v2.0", "sec": 0.08}

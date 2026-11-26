@@ -1,1 +1,1 @@
-{"id": "env_volcano_magma_pool", "cat": "environment", "model": "environment/env_volcano_magma_pool.glb", "tris": 336, "dims": [2.0999999046325684, 2.0999999046325684, 0.28531694412231445], "bytes": 15380, "hash": "a2925dde33670bd2", "gen": "v2.0", "sec": 0.06}
+{"id": "env_volcano_magma_pool", "cat": "environment", "model": "environment/env_volcano_magma_pool.glb", "tris": 504, "dims": [2.130000114440918, 2.129999876022339, 0.33000001311302185], "bytes": 39372, "hash": "b697a8d279e49410", "gen": "v2.0", "sec": 0.06}

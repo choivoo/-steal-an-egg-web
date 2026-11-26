@@ -1,1 +1,1 @@
-{"id": "env_storm_windmill", "cat": "environment", "model": "environment/env_storm_windmill.glb", "tris": 232, "dims": [1.7999999523162842, 1.0, 3.299999952316284], "bytes": 9784, "hash": "2527c739b3ed9ba1", "gen": "v2.0", "sec": 0.07}
+{"id": "env_storm_windmill", "cat": "environment", "model": "environment/env_storm_windmill.glb", "tris": 360, "dims": [1.6200000047683716, 0.8646667003631592, 3.2186667919158936], "bytes": 30672, "hash": "d1a81910ad88d635", "gen": "v2.0", "sec": 0.09}

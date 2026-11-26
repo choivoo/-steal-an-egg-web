@@ -1,1 +1,1 @@
-{"id": "env_snow_ice_arch", "cat": "environment", "model": "environment/env_snow_ice_arch.glb", "tris": 180, "dims": [2.8000000715255737, 0.699999988079071, 2.7300000190734863], "bytes": 13852, "hash": "f3f302e12f3f7c2e", "gen": "v2.0", "sec": 0.05}
+{"id": "env_snow_ice_arch", "cat": "environment", "model": "environment/env_snow_ice_arch.glb", "tris": 264, "dims": [2.799999952316284, 0.699999988079071, 2.7300000190734863], "bytes": 22732, "hash": "3c9547d939972008", "gen": "v2.0", "sec": 0.08}
