@@ -1,8 +1,8 @@
 import { it, expect } from 'vitest';
 import WebSocket from 'ws';
 import { startServer } from '../server/src/index';
-const open = (port: number) => new Promise<WebSocket>((res, rej) => { const w = new WebSocket('ws://localhost:' + port); w.on('open', () => res(w)); w.on('error', rej); });
-const ask = (w: WebSocket, msg: object) => new Promise<any>(res => { const h = (d: any) => { const j = JSON.parse(d.toString()); if (j.t === 'count') return; w.off('message', h); res(j); }; w.on('message', h); w.send(JSON.stringify(msg)); });
+let tk = 0; const open = (port: number) => new Promise<WebSocket>((res, rej) => { const w = new WebSocket('ws://localhost:' + port); w.on('open', () => { w.send(JSON.stringify({ t: 'hello', token: (++tk).toString(16).padStart(32, '0') })); setTimeout(() => res(w), 30); }); w.on('error', rej); });
+const ask = (w: WebSocket, msg: object) => new Promise<any>(res => { const h = (d: any) => { const j = JSON.parse(d.toString()); if (j.t === 'count' || j.t === 'profile' || j.t === 'hello_ok' || j.t === 'snap') return; w.off('message', h); res(j); }; w.on('message', h); w.send(JSON.stringify(msg)); });
 it('15 real sockets -> 7+7+1, code join, pos sync, disconnect', async () => {
   const s = startServer(18081); const ws: WebSocket[] = []; const infos: any[] = [];
   for (let i = 0; i < 15; i++) { const w = await open(18081); ws.push(w); infos.push(await ask(w, { t: 'match' })); }

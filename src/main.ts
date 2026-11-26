@@ -93,8 +93,8 @@ let training = false; let chased = false; const dist2 = (a: THREE.Vector3, b: TH
 function nearWild(): Wild | null { for (const w of wild) if (!w.taken && dist2(player.position, w.pos) < 3.5) return w; return null; }
 function interact() {
   AudioCtx();
-  if (training) { training = false; say('훈련 종료'); return; }
-  if (dist2(player.position, TM) < 3.5 && !carried) { training = true; player.position.set(TM.x, 0.4, TM.z); say('훈련 시작! (이동하면 종료)'); beep(440); return; }
+  if (training) { training = false; if (online()) net!.send({ t: 'train', on: false }); say('훈련 종료'); return; }
+  if (dist2(player.position, TM) < 3.5 && !carried) { training = true; player.position.set(TM.x, 0.4, TM.z); say('훈련 시작! (이동하면 종료)'); beep(440); if (online()) net!.send({ t: 'train', on: true }); return; }
   const w = nearWild();
   if (w && !carried && online()) { net!.send({ t: 'steal', i: wild.indexOf(w) }); return; }
   if (w && !carried && save.eggs.length < save.slots) {
@@ -103,20 +103,21 @@ function interact() {
     chased = true; G.state = G.state === 'SLEEP' ? 'WAKE_UP' : 'CHASE'; G.t = 0; beep(120, 0.4, 'sawtooth'); say(`${d.name} 훔침! 안전구역으로 도망!`);
   } else if (w && save.eggs.length >= save.slots) say('부화 슬롯이 가득 찼습니다');
 }
-function shopBuy() { const n = TREADMILLS[save.treadmill + 1]; if (!n) return say('최고 단계'); if (buyTreadmill(save)) { say(`${n.name} 구매!`); beep(660); persist(); } else say(`돈 부족: ${fmt(n.cost)} 필요`); }
+function shopBuy() { if (online()) { net!.send({ t: 'buy' }); return; } const n = TREADMILLS[save.treadmill + 1]; if (!n) return say('최고 단계'); if (buyTreadmill(save)) { say(`${n.name} 구매!`); beep(660); persist(); } else say(`돈 부족: ${fmt(n.cost)} 필요`); }
 function endChase(success: boolean) {
   chased = false; G.state = 'RETURN_HOME'; $('chase').style.display = 'none';
   if (!carried) return; const c = carried; carried = null; scene.remove(c.obj);
   if (success) { addEgg(save, c.eggId, Date.now()); syncEggs(); say('귀환 성공! 알이 부화 슬롯에 놓였습니다'); beep(880, 0.3); persist(); }
   else { const w = wild[c.src]; w.taken = false; scene.add(w.obj); say('잡혔다! 알을 잃었습니다'); beep(90, 0.5, 'square'); player.position.set(0, 0, 4); }
 }
-function persist() { save.last = Date.now(); try { localStorage.setItem(SAVE_KEY, JSON.stringify(save)); } catch {} }
+function persist() { if (online()) return; save.last = Date.now(); try { localStorage.setItem(SAVE_KEY, JSON.stringify(save)); } catch {} }
 setInterval(persist, 5000); document.addEventListener('visibilitychange', () => { if (document.hidden) persist(); });
 
 // online (서버 없으면 오프라인 모드로 표시)
 const qs = new URLSearchParams(location.search); const WS = qs.get('ws') || (import.meta.env.VITE_WS_URL as string | undefined);
 const net = WS && qs.get('offline') !== '1' ? new Net(WS, qs.get('code') || undefined) : null;
 const srv = { gx: G.home.x, gz: G.home.z };
+let profileReady = false;
 const remotes = new Map<string, { o: THREE.Group; tx: number; tz: number; ry: number }>();
 if (net) {
   net.onPos = (id, x, z, ry) => { let r = remotes.get(id); if (!r) { const o = new THREE.Group(); const b = new THREE.Mesh(new THREE.CapsuleGeometry(0.45, 0.9, 4, 12), new THREE.MeshStandardMaterial({ color: 0x66aaff })); b.position.y = 0.95; o.add(b); o.position.set(x, 0, z); scene.add(o); r = { o, tx: x, tz: z, ry }; remotes.set(id, r); } r.tx = x; r.tz = z; r.ry = ry; };
@@ -125,8 +126,12 @@ if (net) {
   net.onMsg = m => {
     if (m.t === 'snap') { srv.gx = m.g.x; srv.gz = m.g.z; m.eggs.forEach((st: number, i: number) => { const w = wild[i]; if (!w) return; const take = st !== 0; if (take && !w.taken) { w.taken = true; scene.remove(w.obj); } else if (!take && w.taken && !(carried && carried.src === i)) { w.taken = false; scene.add(w.obj); } }); }
     else if (m.t === 'steal_ok') { const d = EGGS.find(e => e.id === m.eggId)!; const o = new THREE.Group(); carried = { eggId: m.eggId, src: m.i, obj: o }; wild[m.i].taken = true; scene.remove(wild[m.i].obj); scene.add(o); model(d.model, 1.2).then(x => o.add(x)); beep(120, 0.4, 'sawtooth'); say(`${d.name} 훔침! 안전구역으로 도망!`); }
-    else if (m.t === 'steal_fail') say(m.reason === 'TAKEN' ? '다른 플레이어가 먼저 가져갔습니다' : m.reason === 'ALREADY_CARRYING' ? '이미 알을 들고 있습니다' : '알에 더 가까이 가세요');
-    else if (m.t === 'returned') { if (carried) { scene.remove(carried.obj); carried = null; } addEgg(save, m.eggId, Date.now()); syncEggs(); say('귀환 성공! 알이 부화 슬롯에 놓였습니다'); beep(880, 0.3); persist(); }
+    else if (m.t === 'steal_fail') say(m.reason === 'SLOTS_FULL' ? '부화 슬롯이 가득 찼습니다' : m.reason === 'TAKEN' ? '다른 플레이어가 먼저 가져갔습니다' : m.reason === 'ALREADY_CARRYING' ? '이미 알을 들고 있습니다' : '알에 더 가까이 가세요');
+    else if (m.t === 'returned') { if (carried) { scene.remove(carried.obj); carried = null; } say('귀환 성공! 알이 부화 슬롯에 놓였습니다'); beep(880, 0.3); }
+    else if (m.t === 'profile') { const had = save.pets.length; Object.assign(save, m.p); syncEggs(); syncPets(); if (save.pets.length > had && had >= 0 && profileReady) { const p = save.pets[save.pets.length - 1]; const d = PETS.find(x => x.id === p.petId)!; say(`🐣 ${d.name} 부화! (${RARITIES.find(r => r.id === d.rarity)!.name})`, 4); beep(990, 0.4); } profileReady = true; }
+    else if (m.t === 'buy_result') { say(m.ok ? '러닝머신 구매!' : '돈이 부족합니다', 2); if (m.ok) beep(660); }
+    else if (m.t === 'hello_ok') { if (m.offline > 1) say(`오프라인 수익 +${fmt(m.offline)}`, 4); }
+    else if (m.t === 'kicked') say('다른 곳에서 접속하여 연결이 종료되었습니다', 8);
     else if (m.t === 'caught') { if (carried) { scene.remove(carried.obj); carried = null; } say('잡혔다! 알을 잃었습니다'); beep(90, 0.5, 'square'); player.position.set(0, 0, 4); }
   };
   setInterval(() => net.sendPos(player.position.x, player.position.z, player.rotation.y), 100);
@@ -138,9 +143,9 @@ function frame() {
   const dt = Math.min(clock.getDelta(), 0.1); const now = Date.now(); const t = clock.elapsedTime;
   let ix = (keys.KeyD ? 1 : 0) - (keys.KeyA ? 1 : 0) + joy.x, iz = (keys.KeyS ? 1 : 0) - (keys.KeyW ? 1 : 0) + joy.y;
   const il = Math.hypot(ix, iz); const moving = il > 0.1;
-  if (training && moving) training = false;
+  if (training && moving) { training = false; if (online()) net!.send({ t: 'train', on: false }); }
   const base = worldSpeed(save.train); const spd = carried ? carrySpeed(base, EGGS.find(e => e.id === carried!.eggId)!.weight) : base;
-  if (training) { save.train += TREADMILLS[save.treadmill].gain * dt; player.rotation.y = Math.PI; pb.position.y = 0.95 + Math.abs(Math.sin(t * 12)) * 0.15; belt.material.emissiveIntensity = 1 + Math.sin(t * 20) * 0.5; }
+  if (training) { if (!online()) save.train += TREADMILLS[save.treadmill].gain * dt; player.rotation.y = Math.PI; pb.position.y = 0.95 + Math.abs(Math.sin(t * 12)) * 0.15; belt.material.emissiveIntensity = 1 + Math.sin(t * 20) * 0.5; }
   else if (moving) {
     const l = Math.min(il, 1); ix /= il; iz /= il; const c = Math.cos(camYaw), s = Math.sin(camYaw);
     const wx = ix * c + iz * s, wz = -ix * s + iz * c; player.position.x += wx * spd * l * dt; player.position.z += wz * spd * l * dt;
@@ -164,7 +169,7 @@ function frame() {
   else if (G.state === 'RETURN_HOME') { v.set(G.home.x - gp.x, 0, G.home.z - gp.z); const d = v.length(); if (d < 0.5) { G.state = 'SLEEP'; } else { v.normalize(); gp.addScaledVector(v, 8 * dt); guardian.rotation.y = Math.atan2(v.x, v.z); } }
   if (online()) chased = !!carried; $('chase').style.display = chased ? 'block' : 'none';
   // hatching + income
-  if (now - lastHatchCheck > 500) { lastHatchCheck = now; const g = tickIncome(save, now); const h = hatchReady(save, now); if (h.length) { syncEggs(); syncPets(); h.forEach(p => { const d = PETS.find(x => x.id === p.petId)!; say(`🐣 ${d.name} 부화! (${RARITIES.find(r => r.id === d.rarity)!.name})`, 4); beep(990, 0.4); }); persist(); } void g; }
+  if (now - lastHatchCheck > 500 && !online()) { lastHatchCheck = now; const g = tickIncome(save, now); const h = hatchReady(save, now); if (h.length) { syncEggs(); syncPets(); h.forEach(p => { const d = PETS.find(x => x.id === p.petId)!; say(`🐣 ${d.name} 부화! (${RARITIES.find(r => r.id === d.rarity)!.name})`, 4); beep(990, 0.4); }); persist(); } void g; }
   for (const [, o] of petObjs) o.position.y = Math.abs(Math.sin(t * 2 + o.userData.ph)) * 0.2;
   for (const e of save.eggs) { const o = slotObjs.get(e.uid); if (o) { const total = EGGS.find(x => x.id === e.eggId)!.hatchSec * 1000; const pr = 1 - Math.max(0, e.hatchAt - now) / total; o.rotation.z = pr > 0.8 ? Math.sin(t * 25) * 0.15 * pr : 0; o.scale.setScalar(0.8 + pr * 0.4); } }
   for (const w of wild) w.obj.rotation.y += dt * 0.5;
