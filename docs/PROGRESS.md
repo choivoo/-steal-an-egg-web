@@ -57,3 +57,12 @@
 - render.yaml 작성(미적용). **배포하지 않았으므로 공개 URL/온라인 검증 없음**
 ## 사용자가 해야 하는 일(권한 필요)
 - Render 계정 연결 + Neon DB 생성 후 DATABASE_URL 설정, GitHub Pages 활성화(Settings→Pages→GitHub Actions)
+
+## 업데이트 7 (TESTED)
+- HTTP 엔드포인트: `/health`(Render 헬스체크), `/status`(실제 접속자·서버 목록·이벤트). 이전 버전은 HTTP 응답 경로가 없어 Render 헬스체크 실패 가능성이 컸음
+- 글로벌 이벤트·어드민·감사 로그(docs/ADMIN_SYSTEM.md, docs/GLOBAL_EVENT_SYSTEM.md), SIGTERM 시 저장 후 종료, ALLOWED_ORIGINS로 Origin 검증 옵션
+- 클라이언트 로비: 실제 동접자/서버 목록(/status), 자동 매칭, 코드 입장(형식 검증), 가득 찬 서버 숨기기, 서버 콜드스타트 재시도 안내, 오프라인 플레이, HUD 서버 코드 탭→복사, 이벤트 타이머, 공지 배너, 관리자 콘솔(권한자만 표시)
+- 테스트: vitest 35 통과(+PG 1 조건부), e2e-lobby.mjs(모바일 390x844, 브라우저 5개) 통과
+## 배포 상태
+- 기본 서버 주소를 https://steal-an-egg-server.onrender.com 으로 가정(render.yaml 서비스명). 이 컨테이너에서 해당 주소는 응답 없음(타임아웃) — 실제 주소 미확인. 이 환경의 프록시는 WebSocket 업그레이드를 통과시키지 못하므로 여기서 실서버 WS 검증 불가
+- GitHub Pages 워크플로는 main 푸시 시 실행. 작업 브랜치→main 병합은 사용자 승인 필요

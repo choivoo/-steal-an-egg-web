@@ -114,12 +114,16 @@ function persist() { if (online()) return; save.last = Date.now(); try { localSt
 setInterval(persist, 5000); document.addEventListener('visibilitychange', () => { if (document.hidden) persist(); });
 
 // online (서버 없으면 오프라인 모드로 표시)
-const qs = new URLSearchParams(location.search); const WS = qs.get('ws') || (import.meta.env.VITE_WS_URL as string | undefined);
-const net = WS && qs.get('offline') !== '1' ? new Net(WS, qs.get('code') || undefined) : null;
+const qs = new URLSearchParams(location.search);
+const SERVER = (qs.get('server') || (import.meta.env.VITE_SERVER_URL as string | undefined) || 'https://steal-an-egg-server.onrender.com').replace(/\/$/, '');
+const WS = qs.get('ws') || SERVER.replace(/^http/, 'ws');
+let net: Net | null = null;
+let events: { id: string; kind: string; mult: number; end: number; title: string }[] = [];
+let role = 'PLAYER';
 const srv = { gx: G.home.x, gz: G.home.z };
 let profileReady = false;
 const remotes = new Map<string, { o: THREE.Group; tx: number; tz: number; ry: number }>();
-if (net) {
+function bindNet(net: Net) {
   net.onPos = (id, x, z, ry) => { let r = remotes.get(id); if (!r) { const o = new THREE.Group(); const b = new THREE.Mesh(new THREE.CapsuleGeometry(0.45, 0.9, 4, 12), new THREE.MeshStandardMaterial({ color: 0x66aaff })); b.position.y = 0.95; o.add(b); o.position.set(x, 0, z); scene.add(o); r = { o, tx: x, tz: z, ry }; remotes.set(id, r); } r.tx = x; r.tz = z; r.ry = ry; };
   net.onLeft = id => { const r = remotes.get(id); if (r) { scene.remove(r.o); remotes.delete(id); } };
   net.onError = e => say(e === 'FULL' ? '해당 서버가 가득 찼습니다. 빈자리가 생긴 후 다시 시도해 주세요.' : e === 'NOT_FOUND' ? '존재하지 않거나 종료된 서버입니다.' : '올바른 서버 코드를 입력해 주세요.', 5);
@@ -130,12 +134,16 @@ if (net) {
     else if (m.t === 'returned') { if (carried) { scene.remove(carried.obj); carried = null; } say('귀환 성공! 알이 부화 슬롯에 놓였습니다'); beep(880, 0.3); }
     else if (m.t === 'profile') { const had = save.pets.length; Object.assign(save, m.p); syncEggs(); syncPets(); if (save.pets.length > had && had >= 0 && profileReady) { const p = save.pets[save.pets.length - 1]; const d = PETS.find(x => x.id === p.petId)!; say(`🐣 ${d.name} 부화! (${RARITIES.find(r => r.id === d.rarity)!.name})`, 4); beep(990, 0.4); } profileReady = true; }
     else if (m.t === 'buy_result') { say(m.ok ? '러닝머신 구매!' : '돈이 부족합니다', 2); if (m.ok) beep(660); }
-    else if (m.t === 'hello_ok') { if (m.offline > 1) say(`오프라인 수익 +${fmt(m.offline)}`, 4); }
-    else if (m.t === 'kicked') say('다른 곳에서 접속하여 연결이 종료되었습니다', 8);
+    else if (m.t === 'hello_ok') { role = m.role ?? 'PLAYER'; $('adminBtn').style.display = role !== 'PLAYER' ? 'block' : 'none'; if (m.offline > 1) say(`오프라인 수익 +${fmt(m.offline)}`, 4); }
+    else if (m.t === 'kicked') say(m.reason ? '관리자에 의해 연결이 종료되었습니다' : '다른 곳에서 접속하여 연결이 종료되었습니다', 8);
+    else if (m.t === 'events') events = m.list;
+    else if (m.t === 'announce') { const b = $('banner'); b.textContent = m.text; b.style.display = 'block'; setTimeout(() => b.style.display = 'none', 10000); beep(700, 0.3); }
+    else if (m.t === 'admin_result') { $('adminOut').textContent = (m.ok ? '✅ ' : '❌ ') + m.msg + (m.data ? '\n' + JSON.stringify(m.data, null, 1) : ''); }
     else if (m.t === 'caught') { if (carried) { scene.remove(carried.obj); carried = null; } say('잡혔다! 알을 잃었습니다'); beep(90, 0.5, 'square'); player.position.set(0, 0, 4); }
   };
   setInterval(() => net.sendPos(player.position.x, player.position.z, player.rotation.y), 100);
 }
+function connect(code?: string) { if (net) return; net = new Net(WS, code); bindNet(net); }
 // loop
 const clock = new THREE.Clock(); const v = new THREE.Vector3(); let lastHatchCheck = 0;
 function resize() { const w = innerWidth, h = innerHeight; renderer.setSize(w, h, false); cam.aspect = w / h; cam.updateProjectionMatrix(); } addEventListener('resize', resize); resize();
@@ -183,10 +191,33 @@ function frame() {
   const canAct = training || (dist2(player.position, TM) < 3.5 && !carried) || !!nearWild(); ($('act') as HTMLElement).style.display = canAct ? 'block' : 'none';
   if (msgT > 0) { msgT -= dt; if (msgT <= 0) $('msg').textContent = ''; }
   for (const r of remotes.values()) { r.o.position.x += (r.tx - r.o.position.x) * Math.min(1, dt * 12); r.o.position.z += (r.tz - r.o.position.z) * Math.min(1, dt * 12); r.o.rotation.y = r.ry; }
+  $('evt').textContent = events.map(e => `⚡ ${e.title} ${new Date(Math.max(0, e.end - now)).toISOString().slice(11, 19)}`).join('  '); $('evt').style.display = events.length ? 'inline-block' : 'none';
   $('net').textContent = !net ? '⚪ 오프라인 모드' : net.status === 'online' && net.info ? `🟢 서버 ${net.info.code} · ${net.info.players}/${net.info.max} · 접속 ${net.info.online}명 · 서버 ${net.info.servers}개` : net.status === 'connecting' ? '🟡 서버 연결 중…' : '🔴 서버 연결 실패(오프라인 모드)';
   renderer.render(scene, cam); requestAnimationFrame(frame);
 }
 syncEggs(); syncPets();
 if (offline > 1) say(`오프라인 수익 +${fmt(offline)}${wasHatched.length ? `, 펫 ${wasHatched.length}마리 부화!` : ''}`, 4);
-(window as any).__game = { remotes, net, save: () => save, player, G, get carried() { return carried; }, interact, wild };
+(window as any).__game = { remotes, get net() { return net; }, save: () => save, player, G, get carried() { return carried; }, interact, wild };
+// 로비
+async function loadServers() {
+  const box = $('servers'); box.textContent = '서버 목록 확인 중… (서버가 잠들어 있으면 깨어나는 데 최대 1분)';
+  for (let i = 0; i < 6; i++) {
+    try { const r = await fetch(SERVER + '/status', { cache: 'no-store' }); const st = await r.json();
+      $('lobbyOnline').textContent = `● ONLINE ${st.online}명 · 공개 서버 ${st.servers}개`;
+      const rooms = (st.rooms as any[]).filter(x => !($('hideFull') as HTMLInputElement).checked || x.players < x.max).sort((a, b) => b.players - a.players);
+      box.innerHTML = rooms.length ? '' : '열린 서버 없음 — 자동 매칭하면 새 공개 서버가 생성됩니다';
+      for (const x of rooms) { const row = document.createElement('div'); row.className = 'row'; row.textContent = `#${x.id} · ${x.code} · ${x.players}/${x.max} `; const b = document.createElement('button'); b.textContent = x.players >= x.max ? '가득 참' : '접속'; b.disabled = x.players >= x.max || x.state !== 'OPEN'; b.onclick = () => enter(x.code); row.appendChild(b); box.appendChild(row); }
+      return; } catch { box.textContent = `서버 시작 중… (${i + 1}/6)`; await new Promise(r => setTimeout(r, 10000)); }
+  }
+  box.textContent = '서버에 연결할 수 없습니다. 오프라인으로 플레이할 수 있습니다.'; $('lobbyOnline').textContent = '● 서버 응답 없음';
+}
+function enter(code?: string) { AudioCtx(); $('lobby').style.display = 'none'; connect(code); }
+$('btnMatch').onclick = () => enter();
+$('btnCode').onclick = () => { const c = ($('codeIn') as HTMLInputElement).value.trim().toUpperCase(); if (!/^[A-Z0-9]{6}$/.test(c)) { $('lobbyMsg').textContent = '올바른 서버 코드를 입력해 주세요.'; return; } enter(c); };
+$('btnOffline').onclick = () => { AudioCtx(); $('lobby').style.display = 'none'; };
+$('btnRefresh').onclick = () => void loadServers(); ($('hideFull') as HTMLInputElement).onchange = () => void loadServers();
+$('net').addEventListener('click', () => { if (net?.info) { void navigator.clipboard?.writeText(net.info.code).then(() => say('서버 코드 복사됨: ' + net!.info!.code)).catch(() => say('서버 코드: ' + net!.info!.code, 5)); } });
+$('adminBtn').onclick = () => { const p = $('adminPanel'); p.style.display = p.style.display === 'block' ? 'none' : 'block'; };
+$('adminRun').onclick = () => { const v = ($('adminIn') as HTMLInputElement).value; if (v && net) net.send({ t: 'admin', cmd: v }); };
+if (qs.get('ws') || qs.get('code')) enter(qs.get('code') || undefined); else if (qs.get('offline') === '1') $('lobby').style.display = 'none'; else void loadServers();
 frame();

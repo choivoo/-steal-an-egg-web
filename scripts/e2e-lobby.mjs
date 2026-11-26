@@ -1,0 +1,15 @@
+import { chromium } from 'playwright';
+const SRV = 'http://localhost:8080', URL = 'http://localhost:4173/?server=' + SRV, OWNER = 'd'.repeat(32);
+const b = await chromium.launch({ executablePath: '/opt/pw-browsers/chromium', args: ['--use-gl=swiftshader', '--enable-unsafe-swiftshader', '--no-sandbox'] });
+const errs = []; const page = async (token) => { const c = await b.newContext({ viewport: { width: 390, height: 844 } }); if (token) await c.addInitScript(t => localStorage.setItem('sae_token', t), token); const p = await c.newPage(); p.on('pageerror', e => errs.push(String(e))); await p.goto(URL); return p; };
+const A = await page(); await A.waitForTimeout(2500); console.log('lobby A:', await A.textContent('#lobbyOnline'));
+await A.click('#btnMatch'); await A.waitForTimeout(2500); const code = await A.evaluate(() => window.__game.net.info.code); console.log('A HUD:', await A.textContent('#net'));
+const B = await page(); await B.waitForTimeout(2500); console.log('B server list:', (await B.textContent('#servers')).trim());
+await B.fill('#codeIn', code); await B.click('#btnCode'); await B.waitForTimeout(2500); console.log('B HUD:', await B.textContent('#net'));
+const C = await page(); await C.waitForTimeout(1000); await C.fill('#codeIn', 'abc'); await C.click('#btnCode'); console.log('C bad code msg:', await C.textContent('#lobbyMsg'));
+const O = await page(OWNER); await O.waitForTimeout(1500); await O.click('#btnMatch'); await O.waitForTimeout(2500);
+console.log('owner admin button visible:', await O.isVisible('#adminBtn'), '| player A admin visible:', await A.isVisible('#adminBtn'));
+await O.click('#adminBtn'); await O.fill('#adminIn', '/event start treadmill 8x 120m global'); await O.click('#adminRun'); await O.waitForTimeout(1500);
+console.log('admin result:', (await O.textContent('#adminOut')).split('\n')[0]); console.log('A banner:', await A.textContent('#banner'), '| A event HUD:', await A.textContent('#evt'));
+await A.screenshot({ path: 'renders/lobby_event_mobile.png' }); const L = await page(); await L.waitForTimeout(2500); await L.screenshot({ path: 'renders/lobby_mobile.png' });
+console.log('errors:', errs); await b.close();

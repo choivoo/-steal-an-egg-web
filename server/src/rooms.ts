@@ -32,6 +32,7 @@ export class RoomManager {
   leave(pid: string, now = Date.now()) { const id = this.byPlayer.get(pid); if (id == null) return; this.byPlayer.delete(pid); const r = this.rooms.get(id); if (!r) return; r.players.delete(pid); if (r.state === 'FULL') r.state = 'OPEN'; if (r.players.size === 0) r.emptySince = now; }
   /** 빈 방 유예 후 종료 */
   expire(now: number) { for (const [id, r] of this.rooms) if (r.players.size === 0 && r.emptySince != null && now - r.emptySince >= this.emptyGraceMs) { r.state = 'CLOSED'; this.rooms.delete(id); } }
+  drain(code: string): boolean { const r = [...this.rooms.values()].find(x => x.code === code); if (!r) return false; r.state = 'DRAINING'; return true; }
   online(): number { return this.byPlayer.size; }
   list() { return [...this.rooms.values()].map(r => ({ id: r.id, code: r.code, players: r.players.size, max: MAX_PLAYERS_PER_ROOM, state: r.state })); }
 }

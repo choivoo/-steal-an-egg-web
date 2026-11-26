@@ -6,17 +6,25 @@
 html,body{margin:0;height:100%;overflow:hidden;background:#101820;font-family:system-ui,sans-serif;color:#fff}
 canvas{display:block;width:100%;height:100%}
 #hud{position:fixed;inset:0;pointer-events:none;padding:env(safe-area-inset-top) 12px 12px}
-.pill{display:inline-block;background:#0009;border-radius:12px;padding:6px 12px;margin:4px 4px 0 0;font-weight:700;font-size:15px}
+.pill{display:inline-block;background:#0009;border-radius:12px;padding:5px 10px;margin:4px 4px 0 0;font-weight:700;font-size:clamp(11px,3.4vw,15px)}
 #msg{position:fixed;top:22%;left:50%;transform:translateX(-50%);font-size:22px;font-weight:800;text-shadow:0 2px 6px #000;text-align:center;pointer-events:none}
 #chase{display:none;position:fixed;inset:0;box-shadow:inset 0 0 120px #f22;pointer-events:none}
 .btn{position:fixed;pointer-events:auto;background:#ffb300;color:#222;border:0;border-radius:50%;font-weight:800;width:76px;height:76px;font-size:14px;right:18px}
 #act{bottom:110px;display:none}#shop{bottom:200px;width:64px;height:64px;font-size:12px;background:#4fc3f7}
-#list{position:fixed;left:12px;top:90px;font-size:13px;pointer-events:none;line-height:1.5}
-#joy{position:fixed;left:24px;bottom:24px;width:130px;height:130px;border-radius:50%;background:#fff2;border:2px solid #fff5}
+#list{margin-top:6px;font-size:13px;pointer-events:none;line-height:1.5}
+#lobby{position:fixed;inset:0;background:linear-gradient(160deg,#1b2a4a,#3b1d5c);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;padding:16px;z-index:10;touch-action:auto;overflow:auto}#lobby *{touch-action:auto}#lobby h1{margin:0;font-size:26px;text-align:center;color:#ffd54f}#lobby button,#adminPanel button{background:#ffb300;border:0;border-radius:12px;padding:10px 16px;font-weight:800;font-size:15px}#lobby input,#adminPanel input{padding:10px;border-radius:10px;border:0;font-size:16px;width:150px;user-select:text;-webkit-user-select:text}#servers{max-height:30vh;overflow:auto;width:min(420px,100%);background:#0005;border-radius:12px;padding:8px;font-size:14px}.row{display:flex;justify-content:space-between;align-items:center;padding:4px}.row button{padding:4px 10px!important;font-size:13px!important}#banner{display:none;position:fixed;top:40%;left:50%;transform:translateX(-50%);background:#6a1b9a;padding:10px 16px;border-radius:12px;font-weight:800;text-align:center;max-width:90vw;z-index:5}#adminBtn{display:none;position:fixed;top:8px;right:12px;pointer-events:auto;background:#e53935;color:#fff;border:0;border-radius:10px;padding:6px 10px;font-weight:800;z-index:6}#adminPanel{display:none;position:fixed;top:44px;right:12px;width:min(360px,92vw);background:#000d;border-radius:12px;padding:10px;z-index:6}#adminPanel *{touch-action:auto}#adminOut{white-space:pre-wrap;font-size:12px;max-height:40vh;overflow:auto}#net{pointer-events:auto;cursor:pointer}#joy{position:fixed;left:24px;bottom:24px;width:130px;height:130px;border-radius:50%;background:#fff2;border:2px solid #fff5}
 #knob{position:absolute;width:56px;height:56px;border-radius:50%;background:#fffa;left:37px;top:37px}
 </style></head><body>
 <link rel="icon" href="data:,"><canvas id="c"></canvas>
-<div id="hud"><span class="pill" id="money"></span><span class="pill" id="spd"></span><span class="pill" id="inc"></span><span class="pill" id="zone"></span><span class="pill" id="net"></span><div id="list"></div></div>
+<div id="hud"><span class="pill" id="money"></span><span class="pill" id="spd"></span><span class="pill" id="inc"></span><span class="pill" id="zone"></span><span class="pill" id="net"></span><span class="pill" id="evt" style="display:none;background:#6a1b9acc"></span><div id="list"></div></div>
+<div id="lobby"><h1>🥚 STEAL AN EGG<br><small style="font-size:14px;color:#fff">WEB EDITION (비공식 팬 제작)</small></h1>
+<div id="lobbyOnline">● 서버 확인 중…</div>
+<button id="btnMatch">자동 매칭으로 시작</button>
+<div><input id="codeIn" maxlength="6" placeholder="서버 코드"> <button id="btnCode">코드로 입장</button></div><div id="lobbyMsg" style="color:#ff8a80"></div>
+<div style="font-size:13px"><label><input type="checkbox" id="hideFull" style="width:auto"> 가득 찬 서버 숨기기</label> <button id="btnRefresh" style="padding:4px 10px;font-size:13px">새로고침</button></div>
+<div id="servers"></div><button id="btnOffline" style="background:#90a4ae">오프라인으로 플레이</button></div>
+<div id="banner"></div><button id="adminBtn">ADMIN</button>
+<div id="adminPanel"><div style="font-size:12px;margin-bottom:6px">예: /event start treadmill 8x 120m global · /announce global 메시지 · /server status · /event stop ID · /server drain CODE · /player kick ID</div><input id="adminIn" style="width:100%" placeholder="/server status"><button id="adminRun" style="margin-top:6px">실행</button><div id="adminOut"></div></div>
 <div id="chase"></div><div id="msg"></div>
 <button class="btn" id="act">상호작용</button><button class="btn" id="shop">업그레이드</button>
 <div id="joy"><div id="knob"></div></div>

@@ -28,14 +28,14 @@ export class Profiles {
   get(pid: string) { return this.s.get(pid)?.save; }
   setTraining(pid: string, on: boolean, pos?: { x: number; z: number }) { const x = this.s.get(pid); if (!x) return false; if (on && (!pos || Math.hypot(pos.x - TREADMILL_POS.x, pos.z - TREADMILL_POS.z) > TREADMILL_RANGE)) return false; x.training = on; return true; }
   /** 서버 틱: 수익, 부화, 훈련(위치 검증). 변경이 있으면 true */
-  tick(pid: string, now: number, pos?: { x: number; z: number }): boolean {
+  tick(pid: string, now: number, pos?: { x: number; z: number }, mult: { train?: number; income?: number } = {}): boolean {
     const x = this.s.get(pid); if (!x) return false; const dt = Math.min(1, Math.max(0, (now - x.lastTick) / 1000)); x.lastTick = now; let ch = false;
-    if (x.training) { if (pos && Math.hypot(pos.x - TREADMILL_POS.x, pos.z - TREADMILL_POS.z) <= TREADMILL_RANGE) { x.save.train += TREADMILLS[x.save.treadmill].gain * dt; ch = true; } else x.training = false; }
-    const before = x.save.money; tickIncome(x.save, now); if (x.save.money !== before) ch = true; if (hatchReady(x.save, now).length) { ch = true; } if (ch) x.dirty = true; return ch;
+    if (x.training) { if (pos && Math.hypot(pos.x - TREADMILL_POS.x, pos.z - TREADMILL_POS.z) <= TREADMILL_RANGE) { x.save.train += TREADMILLS[x.save.treadmill].gain * (mult.train ?? 1) * dt; ch = true; } else x.training = false; }
+    const before = x.save.money; tickIncome(x.save, now); x.save.money += (x.save.money - before) * ((mult.income ?? 1) - 1); if (x.save.money !== before) ch = true; if (hatchReady(x.save, now).length) { ch = true; } if (ch) x.dirty = true; return ch;
   }
   buy(pid: string) { const x = this.s.get(pid); if (!x) return false; const ok = buyTreadmill(x.save); if (ok) { x.dirty = true; this.persist(pid); } return ok; }
   hasSlot(pid: string) { const x = this.s.get(pid); return !!x && x.save.eggs.length < x.save.slots; }
-  giveEgg(pid: string, eggId: string, now: number) { const x = this.s.get(pid); if (!x) return false; const e = addEgg(x.save, eggId, now); if (e) { x.dirty = true; this.persist(pid); } return !!e; }
+  giveEgg(pid: string, eggId: string, now: number, hatchMult = 1) { const x = this.s.get(pid); if (!x) return false; const e = addEgg(x.save, eggId, now); if (e && hatchMult > 1) e.hatchAt = now + (e.hatchAt - now) / hatchMult; if (e) { x.dirty = true; this.persist(pid); } return !!e; }
   persist(pid: string) { const x = this.s.get(pid); if (x) { x.save.last = Date.now(); this.store.set(x.key, x.save); x.dirty = false; } }
   async logout(pid: string) { this.persist(pid); this.s.delete(pid); await this.store.flush(); }
   async periodic() { for (const [pid, x] of this.s) if (x.dirty) this.persist(pid); await this.store.flush(); }

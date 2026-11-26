@@ -6,9 +6,13 @@ services:
     plan: free
     buildCommand: npm ci
     startCommand: npx tsx server/src/index.ts
-    healthCheckPath: /
+    healthCheckPath: /health
     envVars:
       - key: DATABASE_URL
         sync: false
       - key: NODE_VERSION
         value: 22
+      - key: ADMIN_ROLES
+        sync: false
+      - key: EVENT_PRESET
+        value: ORIGINAL
