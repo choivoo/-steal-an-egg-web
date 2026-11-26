@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { EGGS, PETS, TREADMILLS, RARITIES } from './data/defs';
+import { Net } from './net/client';
 import { fmt, worldSpeed, carrySpeed, newSave, addEgg, hatchReady, tickIncome, buyTreadmill, incomePerSec, Save } from './engine/logic';
 
 const $ = (id: string) => document.getElementById(id)!;
@@ -110,6 +111,16 @@ function endChase(success: boolean) {
 function persist() { save.last = Date.now(); try { localStorage.setItem(SAVE_KEY, JSON.stringify(save)); } catch {} }
 setInterval(persist, 5000); document.addEventListener('visibilitychange', () => { if (document.hidden) persist(); });
 
+// online (서버 없으면 오프라인 모드로 표시)
+const qs = new URLSearchParams(location.search); const WS = qs.get('ws') || (import.meta.env.VITE_WS_URL as string | undefined);
+const net = WS && qs.get('offline') !== '1' ? new Net(WS, qs.get('code') || undefined) : null;
+const remotes = new Map<string, { o: THREE.Group; tx: number; tz: number; ry: number }>();
+if (net) {
+  net.onPos = (id, x, z, ry) => { let r = remotes.get(id); if (!r) { const o = new THREE.Group(); const b = new THREE.Mesh(new THREE.CapsuleGeometry(0.45, 0.9, 4, 12), new THREE.MeshStandardMaterial({ color: 0x66aaff })); b.position.y = 0.95; o.add(b); o.position.set(x, 0, z); scene.add(o); r = { o, tx: x, tz: z, ry }; remotes.set(id, r); } r.tx = x; r.tz = z; r.ry = ry; };
+  net.onLeft = id => { const r = remotes.get(id); if (r) { scene.remove(r.o); remotes.delete(id); } };
+  net.onError = e => say(e === 'FULL' ? '해당 서버가 가득 찼습니다. 빈자리가 생긴 후 다시 시도해 주세요.' : e === 'NOT_FOUND' ? '존재하지 않거나 종료된 서버입니다.' : '올바른 서버 코드를 입력해 주세요.', 5);
+  setInterval(() => net.sendPos(player.position.x, player.position.z, player.rotation.y), 100);
+}
 // loop
 const clock = new THREE.Clock(); const v = new THREE.Vector3(); let lastHatchCheck = 0;
 function resize() { const w = innerWidth, h = innerHeight; renderer.setSize(w, h, false); cam.aspect = w / h; cam.updateProjectionMatrix(); } addEventListener('resize', resize); resize();
@@ -155,9 +166,11 @@ function frame() {
   $('list').innerHTML = save.eggs.map(e => { const d = EGGS.find(x => x.id === e.eggId)!; const s = Math.max(0, Math.ceil((e.hatchAt - now) / 1000)); return `🥚 ${d.name} — ${s}s`; }).join('<br>') + `<br>펫 ${save.pets.length}마리 · 슬롯 ${save.eggs.length}/${save.slots}`;
   const canAct = training || (dist2(player.position, TM) < 3.5 && !carried) || !!nearWild(); ($('act') as HTMLElement).style.display = canAct ? 'block' : 'none';
   if (msgT > 0) { msgT -= dt; if (msgT <= 0) $('msg').textContent = ''; }
+  for (const r of remotes.values()) { r.o.position.x += (r.tx - r.o.position.x) * Math.min(1, dt * 12); r.o.position.z += (r.tz - r.o.position.z) * Math.min(1, dt * 12); r.o.rotation.y = r.ry; }
+  $('net').textContent = !net ? '⚪ 오프라인 모드' : net.status === 'online' && net.info ? `🟢 서버 ${net.info.code} · ${net.info.players}/${net.info.max} · 접속 ${net.info.online}명 · 서버 ${net.info.servers}개` : net.status === 'connecting' ? '🟡 서버 연결 중…' : '🔴 서버 연결 실패(오프라인 모드)';
   renderer.render(scene, cam); requestAnimationFrame(frame);
 }
 syncEggs(); syncPets();
 if (offline > 1) say(`오프라인 수익 +${fmt(offline)}${wasHatched.length ? `, 펫 ${wasHatched.length}마리 부화!` : ''}`, 4);
-(window as any).__game = { save: () => save, player, G, get carried() { return carried; }, interact, wild };
+(window as any).__game = { remotes, net, save: () => save, player, G, get carried() { return carried; }, interact, wild };
 frame();
