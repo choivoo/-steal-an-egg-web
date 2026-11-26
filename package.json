@@ -12,10 +12,12 @@
   "server": "tsx server/src/index.ts"
  },
  "dependencies": {
+  "pg": "^8.23.1",
   "three": "^0.170.0",
   "ws": "^8.23.0"
  },
  "devDependencies": {
+  "@types/pg": "^8.23.1",
   "@types/three": "^0.170.0",
   "@types/ws": "^8.18.2",
   "playwright": "^1.65.1",

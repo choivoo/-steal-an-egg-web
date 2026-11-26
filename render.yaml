@@ -1,0 +1,14 @@
+# Render Blueprint (미배포 — 사용자가 Render 계정 연결 후 적용). 무료 플랜, DATABASE_URL은 Neon 연결 문자열을 대시보드에서 직접 입력(저장소에 커밋 금지).
+services:
+  - type: web
+    name: steal-an-egg-server
+    runtime: node
+    plan: free
+    buildCommand: npm ci
+    startCommand: npx tsx server/src/index.ts
+    healthCheckPath: /
+    envVars:
+      - key: DATABASE_URL
+        sync: false
+      - key: NODE_VERSION
+        value: 22

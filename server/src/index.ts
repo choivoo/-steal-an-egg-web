@@ -1,6 +1,7 @@
 import { WebSocketServer, WebSocket } from 'ws';
 import { World } from './world';
 import { RoomManager, MAX_PLAYERS_PER_ROOM } from './rooms';
+import { PgStore } from './pgstore';
 import { Profiles, Store, MemoryStore, JsonFileStore, validToken } from './profiles';
 export function startServer(port: number, mgr = new RoomManager(), store: Store = new MemoryStore()) {
   const wss = new WebSocketServer({ port, maxPayload: 4096 });
@@ -20,13 +21,13 @@ export function startServer(port: number, mgr = new RoomManager(), store: Store 
     for (const [id, w] of worlds) { const r = mgr.rooms.get(id); if (!r) { worlds.delete(id); continue; } send(w.tick(0.05, now));
       if (n % 2 === 0) { const m = JSON.stringify(w.snap()); for (const q of r.players) conns.get(q)?.send(m); }
       if (n % 10 === 0) for (const q of r.players) if (profiles.tick(q, now, w.pos.get(q))) pushProfile(q); }
-    if (n % 200 === 0) { mgr.expire(now); profiles.periodic(); }
+    if (n % 200 === 0) { mgr.expire(now); void profiles.periodic().catch(() => {}); }
   }, 50);
   wss.on('connection', ws => {
     const pid = 'u' + ++seq; conns.set(pid, ws); let rate = 0; const iv = setInterval(() => rate = 0, 1000);
-    ws.on('message', raw => {
+    ws.on('message', async raw => {
       if (++rate > 60) return; let m: any; try { m = JSON.parse(raw.toString()); } catch { return; }
-      if (m.t === 'hello') { if (authed.has(pid) || !validToken(m.token)) return; const r = profiles.login(pid, m.token, Date.now()); authed.add(pid);
+      if (m.t === 'hello') { if (authed.has(pid) || !validToken(m.token)) return; authed.add(pid); let r; try { r = await profiles.login(pid, m.token, Date.now()); } catch (e) { authed.delete(pid); tx(pid, { t: 'error', error: 'DB_UNAVAILABLE' }); return; }
         if (r.kick) { tx(r.kick, { t: 'kicked' }); conns.get(r.kick)?.close(); } tx(pid, { t: 'hello_ok', offline: r.offline }); pushProfile(pid); return; }
       if (!authed.has(pid)) return;
       if (m.t === 'match') { mgr.autoMatch(pid); tx(pid, info(pid)); announce(roomOf(pid)); }
@@ -36,8 +37,8 @@ export function startServer(port: number, mgr = new RoomManager(), store: Store 
       else if (m.t === 'train') { const ok = profiles.setTraining(pid, !!m.on, worldOf(pid)?.pos.get(pid)); tx(pid, { t: 'train_state', on: !!m.on && ok }); }
       else if (m.t === 'buy') { const ok = profiles.buy(pid); tx(pid, { t: 'buy_result', ok }); pushProfile(pid); }
     });
-    ws.on('close', () => { clearInterval(iv); authed.delete(pid); const rr = roomOf(pid); send(worldOf(pid)?.remove(pid, Date.now()) ?? []); broadcast(pid, { t: 'left', id: pid }); conns.delete(pid); mgr.leave(pid); announce(rr); profiles.logout(pid); });
+    ws.on('close', () => { clearInterval(iv); authed.delete(pid); const rr = roomOf(pid); send(worldOf(pid)?.remove(pid, Date.now()) ?? []); broadcast(pid, { t: 'left', id: pid }); conns.delete(pid); mgr.leave(pid); announce(rr); void profiles.logout(pid).catch(() => {}); });
   });
-  return { wss, mgr, profiles, close: () => new Promise<void>(res => { clearInterval(loop); profiles.periodic(); for (const c of wss.clients) c.terminate(); wss.close(() => res()); }) };
+  return { wss, mgr, profiles, close: async () => { clearInterval(loop); await profiles.periodic().catch(() => {}); for (const c of wss.clients) c.terminate(); await new Promise<void>(res => wss.close(() => res())); } };
 }
-if (process.argv[1]?.endsWith('index.ts') || process.argv[1]?.endsWith('index.js')) { startServer(Number(process.env.PORT ?? 8080), new RoomManager(), new JsonFileStore(process.env.DATA_FILE ?? 'data/db.json')); console.log('listening'); }
+if (process.argv[1]?.endsWith('index.ts') || process.argv[1]?.endsWith('index.js')) { startServer(Number(process.env.PORT ?? 8080), new RoomManager(), process.env.DATABASE_URL ? new PgStore(process.env.DATABASE_URL) : new JsonFileStore(process.env.DATA_FILE ?? 'data/db.json')); console.log('listening'); }

@@ -1,0 +1,1 @@
+현재 월 운영비: **0원(아무것도 배포·결제하지 않음)**. 계획: GitHub Pages + Render Free + Neon Free (docs/FREE_TIER_LIMITS.md). 유료 전환 조건: 스핀다운 없는 상시 운영이 필요할 때(약 $7/월 추정, 미검증) 또는 Neon 1GB/100 CU-hours 초과 시. 사용자 승인 없이 결제하지 않음.

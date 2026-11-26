@@ -49,3 +49,11 @@
 - 계정은 익명 토큰(토큰 분실=계정 분실, 로그인/복구 UI 없음). 어드민 권한 체계 없음
 - 훈련 위치 검증은 서버가 아는 위치(속도 제한 적용) 기준. 상세 치트 방어(패킷 변조 외 로직 우회)는 미감사
 - 크기·돌연변이는 아직 없음
+
+## 업데이트 6 (TESTED/부분)
+- 무료 인프라 조사 → docs/FREE_TIER_LIMITS.md, docs/HOSTING_COST_REPORT.md (Render 무료는 15분 무트래픽 스핀다운·임시 디스크 → Postgres 필수)
+- server/src/pgstore.ts: Postgres 저장소(배치 UPSERT, 실패 시 재시도 큐). 로컬 Postgres 16으로 영속성 테스트 통과(tests/pgstore.test.ts, TEST_PG_URL 지정 시 실행). **Neon 실제 연결은 미검증**(자격 증명 없음)
+- Store 비동기화, 로그인 시 이전 세션 선저장 후 로드(경합 수정). DB 불가 시 DB_UNAVAILABLE 응답
+- render.yaml 작성(미적용). **배포하지 않았으므로 공개 URL/온라인 검증 없음**
+## 사용자가 해야 하는 일(권한 필요)
+- Render 계정 연결 + Neon DB 생성 후 DATABASE_URL 설정, GitHub Pages 활성화(Settings→Pages→GitHub Actions)
